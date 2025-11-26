@@ -327,8 +327,4 @@ with st.expander("Detalle por encuestador"):
     st.dataframe(
         resumen_encuestador.sort_values(["region", "encuestador"]),
         use_container_width=True
-<<<<<<< HEAD
     )
-=======
-    )
->>>>>>> 1227c65 (Actualiza dashboard y datos)
