@@ -8,44 +8,47 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# ===============================
-# CONFIGURACIÓN BÁSICA STREAMLIT
-# ===============================
 
+# ============================================
+# CONFIGURACIÓN STREAMLIT
+# ============================================
 st.set_page_config(
     page_title="Avance encuesta por región",
     layout="wide"
 )
 
-# ===============================
-# RUTAS DE ARCHIVOS
-# ===============================
-
 DATA_PATH = "data/data_26112025.xlsx"
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
-# carpeta base (para logos)
-DATA_DIR = "logos"
-
-LOGO_RIMISP = os.path.join(DATA_DIR, "logo_rimisp.png")
-LOGO_INDAP  = os.path.join(DATA_DIR, "logo_indap.png")
-LOGO_BID    = os.path.join(DATA_DIR, "logo_bid.png")
+LOGO_PATH = "logos"
+LOGO_RIMISP = os.path.join(LOGO_PATH, "logo_rimisp.png")
+LOGO_INDAP = os.path.join(LOGO_PATH, "logo_indap.png")
+LOGO_BID = os.path.join(LOGO_PATH, "logo_bid.png")
 
 META_DIARIA_DEFAULT = 3.0
 
-# ===============================
+
+# ============================================
 # FUNCIONES AUXILIARES
-# ===============================
+# ============================================
 
 def limpiar_region_location(x):
     if pd.isna(x):
         return None
     x = x.upper()
-    x = x.replace("REGIÓN DEL ", "").replace("REGION DEL ", "")
-    x = x.replace("REGIÓN DE ", "").replace("REGION DE ", "")
-    x = x.replace("REGIÓN ", "").replace("REGION ", "")
-    x = x.replace(", CHILE", "").strip()
 
+    x = (
+        x.replace("REGIÓN DEL ", "")
+         .replace("REGION DEL ", "")
+         .replace("REGIÓN DE ", "")
+         .replace("REGION DE ", "")
+         .replace("REGIÓN ", "")
+         .replace("REGION ", "")
+         .replace(", CHILE", "")
+         .strip()
+    )
+
+    # Casos especiales
     if "BIOBIO" in x or "BIOBÍO" in x:
         return "BIOBIO"
     if "AYSEN" in x or "AYSÉN" in x:
@@ -73,7 +76,7 @@ def normalizar_texto(s):
     return s
 
 
-# Diccionario con código oficial Chile
+# Diccionario oficial de códigos por región
 region_map = {
     "ARICA Y PARINACOTA": "15-ARICA Y PARINACOTA",
     "TARAPACA": "01-TARAPACA",
@@ -93,9 +96,10 @@ region_map = {
     "ÑUBLE": "16-ÑUBLE"
 }
 
-# ===============================
+
+# ============================================
 # CARGA DE DATOS
-# ===============================
+# ============================================
 
 xls = pd.ExcelFile(DATA_PATH)
 
@@ -103,22 +107,28 @@ folio = pd.read_excel(xls, "folio_survey")
 entrevista = pd.read_excel(xls, "entrevista_survey")
 tot_regiones = pd.read_excel(TOTAL_PATH, "Hoja1")
 
-# Normalizar nombres
+
+# ============================================
+# LIMPIEZA DE REGIONES
+# ============================================
+
 folio["location"] = folio["location"].astype(str)
 folio["region_clean"] = folio["location"].apply(limpiar_region_location)
 folio["region_clean"] = folio["region_clean"].apply(normalizar_texto)
 
 tot_regiones["region_clean"] = tot_regiones["Región"].apply(normalizar_texto)
 
-# Aplicar códigos a ambos DF
 folio["region_code"] = folio["region_clean"].map(region_map)
 tot_regiones["region_code"] = tot_regiones["region_clean"].map(region_map)
 
-# Conversión de entrevista
+
+# ============================================
+# PROCESAMIENTO DE ENTREVISTAS
+# ============================================
+
 entrevista = entrevista.rename(columns={"assignmentId": "campaign_assigned_id"})
 entrevista["completedAt_cl"] = pd.to_datetime(entrevista["completedAt_cl"], errors="coerce")
 
-# MERGE completo
 df = folio.merge(
     entrevista[["campaign_assigned_id", "status", "completedAt_cl"]],
     on="campaign_assigned_id",
@@ -130,12 +140,22 @@ df["fecha"] = df["completedAt_cl"].dt.date
 
 df = df[df["region_code"].notna()].copy()
 
-fecha_min = df["fecha"].min()
-fecha_max = df["fecha"].max()
 
-# ===============================
+# ============================================
+# CORRECCIÓN DE FECHAS PARA STREAMLIT (Render)
+# ============================================
+
+if df["fecha"].dropna().empty:
+    fecha_min = date.today()
+    fecha_max = date.today()
+else:
+    fecha_min = pd.to_datetime(df["fecha"].dropna()).min().date()
+    fecha_max = pd.to_datetime(df["fecha"].dropna()).max().date()
+
+
+# ============================================
 # LOGOS
-# ===============================
+# ============================================
 
 c1, c2, c3 = st.columns([1, 1, 1])
 with c1:
@@ -152,9 +172,10 @@ st.markdown("---")
 st.title("Dashboard de avance de encuesta por región")
 st.caption("Fuente: data_26112025.xlsx y totalmuestra.xlsx")
 
-# ===============================
+
+# ============================================
 # SIDEBAR FILTROS
-# ===============================
+# ============================================
 
 st.sidebar.header("Filtros y parámetros")
 
@@ -174,9 +195,10 @@ regiones_seleccionadas = st.sidebar.multiselect(
 
 df_corte = df[(df["fecha"] <= fecha_corte) & (df["region_code"].isin(regiones_seleccionadas))]
 
-# ===============================
-# RESUMEN POR REGIÓN
-# ===============================
+
+# ============================================
+# RESÚMENES POR REGIÓN
+# ============================================
 
 realizadas_region = (
     df_corte.groupby("region_code")["campaign_assigned_id"]
@@ -197,17 +219,17 @@ resumen_region = tot_regiones[
 resumen_region = resumen_region.merge(realizadas_region, on="region_code", how="left")
 resumen_region = resumen_region.merge(encuestadores_region, on="region_code", how="left")
 
-resumen_region[["realizadas", "n_encuestadores"]] = resumen_region[["realizadas", "n_encuestadores"]].fillna(0)
-
 resumen_region = resumen_region.rename(columns={"N° de usuarios(as)": "total_muestra"})
+resumen_region[["realizadas", "n_encuestadores"]] = resumen_region[["realizadas", "n_encuestadores"]].fillna(0)
 
 resumen_region["avance_pct"] = (
     100 * resumen_region["realizadas"] / resumen_region["total_muestra"]
 ).round(1)
 
-# ===============================
+
+# ============================================
 # MÉTRICAS GLOBALES
-# ===============================
+# ============================================
 
 total_muestra_global = resumen_region["total_muestra"].sum()
 total_realizadas_global = resumen_region["realizadas"].sum()
@@ -218,9 +240,10 @@ col1.metric("Realizadas (global)", f"{total_realizadas_global}")
 col2.metric("Total muestra global", f"{int(total_muestra_global)}")
 col3.metric("Avance global (%)", f"{avance_global:.1f}%")
 
-# ===============================
+
+# ============================================
 # GRAFICO
-# ===============================
+# ============================================
 
 st.subheader("Avance acumulado por región")
 
@@ -249,9 +272,10 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ===============================
+
+# ============================================
 # TABLA
-# ===============================
+# ============================================
 
 st.subheader("Detalle por región")
 
