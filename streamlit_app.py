@@ -217,8 +217,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # ---------- TOTALMUESTRA ----------
         tot = pd.read_excel(path_total)
         
-        st.write("**Columnas en totalmuestra:**", list(tot.columns))
-        
         # Mapeo flexible para totalmuestra
         mapeo_total = {
             "Región": "region_key",
@@ -249,6 +247,13 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         tot_regiones = tot_regiones.replace({"region_key": {"NAN": np.nan}})
         tot_regiones = tot_regiones.dropna(subset=["region_key"]).copy()
         
+        # Extraer número de región para ordenamiento
+        tot_regiones["region_num"] = (
+            tot_regiones["region_key"]
+            .str.extract(r'^(\d+)', expand=False)
+            .astype(float)
+        )
+        
         # Crear etiqueta
         tot_regiones["region_label"] = (
             tot_regiones["region_key"]
@@ -257,6 +262,9 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             .str.strip()
             .str.title()
         )
+        
+        # Ordenar por número de región
+        tot_regiones = tot_regiones.sort_values("region_num").reset_index(drop=True)
         
         return df, limpieza_info, tot_regiones
         
@@ -299,19 +307,8 @@ if df.empty:
     st.error("No se encontraron entrevistas COMPLETED.")
     st.stop()
 
-# DIAGNÓSTICO FECHAS Y REGIONES
-st.write("**🔍 DIAGNÓSTICO FINAL - Datos cargados:**")
-st.write(f"- Total registros en df: {len(df)}")
-st.write(f"- Regiones únicas en df: {df['region_key'].nunique()}")
-st.write(f"- Regiones: {sorted(df['region_key'].unique())}")
-
 fecha_min = df["fecha"].min()
 fecha_max = df["fecha"].max()
-
-st.write(f"- Fecha mínima: {fecha_min}")
-st.write(f"- Fecha máxima: {fecha_max}")
-st.write(f"- Distribución por fecha:")
-st.write(df.groupby("fecha").size().sort_index())
 
 # ===============================
 # CABECERA
@@ -368,28 +365,9 @@ if not regiones_seleccionadas:
 # FILTRADO PRINCIPAL
 # ===============================
 
-st.write("**🔍 DIAGNÓSTICO - Filtrado:**")
-st.write(f"- Fecha de corte seleccionada: {fecha_corte}")
-st.write(f"- Regiones seleccionadas: {regiones_seleccionadas}")
-
 df_corte = df[
     (df["fecha"] <= fecha_corte) & (df["region_key"].isin(regiones_seleccionadas))
 ].copy()
-
-st.write(f"- Registros después de filtrar por fecha: {len(df[df['fecha'] <= fecha_corte])}")
-st.write(f"- Registros después de filtrar por región: {len(df[df['region_key'].isin(regiones_seleccionadas)])}")
-st.write(f"- Registros después de ambos filtros: {len(df_corte)}")
-
-if len(df_corte) == 0:
-    st.error("⚠️ **PROBLEMA ENCONTRADO:**")
-    st.write("Las regiones en tus datos no coinciden con las regiones en totalmuestra.xlsx")
-    st.write(f"**Regiones en datos:** {sorted(df['region_key'].unique())}")
-    st.write(f"**Regiones en totalmuestra:** {sorted(tot_regiones['region_key'].unique())}")
-    
-    # Intentar normalizar y hacer merge de todas formas
-    st.info("🔧 Intentando continuar con todas las regiones disponibles...")
-    regiones_seleccionadas = list(df['region_key'].unique())
-    df_corte = df[df["fecha"] <= fecha_corte].copy()
 
 df_filtrado_total = df[df["region_key"].isin(regiones_seleccionadas)].copy()
 
@@ -436,6 +414,9 @@ resumen_region["avance_pct"] = (
     100 * resumen_region["realizadas"] / resumen_region["total_muestra"]
 ).round(1)
 
+# Ordenar por número de región
+resumen_region = resumen_region.sort_values("region_num").reset_index(drop=True)
+
 # ===============================
 # MÉTRICAS GLOBALES
 # ===============================
@@ -464,8 +445,6 @@ st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')}")
 # ===============================
 
 st.subheader("📊 Avance por región")
-
-resumen_region = resumen_region.sort_values("avance_pct", ascending=True)
 
 fig = go.Figure()
 
