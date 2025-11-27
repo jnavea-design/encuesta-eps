@@ -64,8 +64,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         folio = pd.read_excel(xls, "folio_survey")
         
-        st.write("**Columnas en folio_survey:**", list(folio.columns))
-        
         # Mapeo flexible de columnas
         columnas_mapeo = {
             "Region (Agregada)": "region_key",
@@ -140,8 +138,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         entrevista = pd.read_excel(xls, "entrevista_survey")
         
-        st.write("**Columnas en entrevista_survey:**", list(entrevista.columns))
-        
         # Flexibilidad en nombres de columnas
         if "assignmentId" in entrevista.columns:
             entrevista = entrevista.rename(columns={"assignmentId": "campaign_assigned_id"})
@@ -173,30 +169,17 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         entrevista_subset = entrevista[columnas_entrevista].copy()
         
-        # MERGE
-        st.write("**🔍 DIAGNÓSTICO - Antes del merge:**")
-        st.write(f"- Registros en folio: {len(folio)}")
-        st.write(f"- IDs únicos en folio: {folio['campaign_assigned_id'].nunique()}")
-        st.write(f"- Registros en entrevista: {len(entrevista_subset)}")
-        st.write(f"- IDs únicos en entrevista: {entrevista_subset['campaign_assigned_id'].nunique()}")
-        
-        # Ver si hay IDs en común
+        # MERGE - Intentar por campaign_assigned_id
         ids_folio = set(folio['campaign_assigned_id'].dropna())
         ids_entrevista = set(entrevista_subset['campaign_assigned_id'].dropna())
         ids_comunes = ids_folio.intersection(ids_entrevista)
-        st.write(f"- IDs en común: {len(ids_comunes)}")
         
         # Intentar merge por campaign_assigned_id
         if len(ids_comunes) > 0:
-            st.success(f"✅ Usando merge por campaign_assigned_id ({len(ids_comunes)} coincidencias)")
             df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="inner")
         else:
-            st.warning("⚠️ No hay IDs en común por campaign_assigned_id")
-            
             # Intentar por folio
             if "folio_encuesta" in entrevista.columns or "subjectId" in entrevista.columns:
-                st.info("🔄 Intentando merge por folio...")
-                
                 # Preparar columna de folio en entrevista
                 if "folio_encuesta" in entrevista.columns:
                     entrevista["folio_match"] = entrevista["folio_encuesta"].astype(str)
@@ -208,33 +191,22 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
                 # Merge por folio
                 entrevista_subset_folio = entrevista[columnas_entrevista + ["folio_match"]].copy()
                 df = folio.merge(entrevista_subset_folio, on="folio_match", how="inner")
-                
-                st.success(f"✅ Merge por folio exitoso: {len(df)} registros")
             else:
-                st.error("❌ No se puede hacer merge. Columnas disponibles en entrevista:")
-                st.write(list(entrevista.columns))
+                st.error("❌ No se puede hacer merge. Revisa la estructura de los archivos.")
                 st.stop()
-        
-        st.write(f"- Registros después del merge: {len(df)}")
-        st.write(f"- Registros con status null: {df['status'].isna().sum() if 'status' in df.columns else 'N/A'}")
         
         # Filtrar por status si existe
         if "status" in df.columns:
-            antes_filtro = len(df)
             df = df[df["status"] == "COMPLETED"].copy()
-            st.write(f"- Registros COMPLETED: {len(df)} (filtrados: {antes_filtro - len(df)})")
         
         # Procesar fechas
         if "completedAt_cl" in df.columns:
             df["completedAt_cl"] = pd.to_datetime(df["completedAt_cl"], errors="coerce")
             df["fecha"] = df["completedAt_cl"].dt.date
-            antes_fecha = len(df)
             df = df[~df["fecha"].isna()].copy()
-            st.write(f"- Registros con fecha válida: {len(df)} (sin fecha: {antes_fecha - len(df)})")
         else:
             # Si no hay fecha, usar fecha actual
             df["fecha"] = date.today()
-            st.warning("⚠️ No hay columna de fecha, usando fecha actual")
         
         df["comuna"] = df["comuna"].fillna("Sin comuna")
         df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
