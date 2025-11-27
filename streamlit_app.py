@@ -19,8 +19,12 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/data_27112025.xlsx"   # folio_survey + entrevista_survey
-TOTAL_PATH = "data/totalmuestra.xlsx"   # tabla simple Región / N° de usuarios(as)
+# Archivo de datos con folio_survey y entrevista_survey
+DATA_PATH = "data/data_27112025.xlsx"
+
+# Archivo con totales por región, formato:
+# Región | N° de usuarios(as)
+TOTAL_PATH = "data/totalmuestra.xlsx"
 
 # ===============================
 # COLORES
@@ -42,9 +46,8 @@ COLORS = {
 def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
     Carga:
-      - data_26112025.xlsx (folio_survey + entrevista_survey)
-      - totalmuestra.xlsx  (Hoja1 con columnas:
-            'Región', 'N° de usuarios(as)')
+      - data_27112025.xlsx (folio_survey + entrevista_survey)
+      - totalmuestra.xlsx  (Hoja1 con columnas 'Región', 'N° de usuarios(as)')
     Devuelve:
       - df: entrevistas COMPLETED con metadatos y region_key tipo '08-BIOBIO'
       - limpieza_info: stats de folios filtrados
@@ -81,6 +84,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     }
 
     # asegurar que region_key tenga el formato correcto como texto
+    # (ej: '08-BIOBIO', '11-AYSÉN', etc.)
     folio["region_key"] = folio["region_key"].astype(str).str.strip()
 
     # ---------- ENTREVISTA SURVEY ----------
@@ -91,7 +95,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         ["campaign_assigned_id", "status", "completedAt_cl"]
     ].copy()
 
-    # MERGE
+    # MERGE folio + entrevista
     df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="left")
 
     # sólo COMPLETED
@@ -105,7 +109,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
 
     # ---------- TOTAL MUESTRA POR REGIÓN ----------
-    # Nuevo archivo sencillo:
+    # Archivo simple:
     # Región | N° de usuarios(as)
     tot_regiones = pd.read_excel(path_total, "Hoja1")
 
@@ -117,11 +121,13 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     )
 
     # asegurar formato idéntico al de folio_survey
+    # (ej: '08-BIOBIO', '11-AYSÉN'...)
     tot_regiones["region_key"] = (
         tot_regiones["region_key"].astype(str).str.strip()
     )
 
-    # etiqueta sin código (solo el nombre después del guion)
+    # etiqueta sin el código para mostrar en el gráfico
+    # (ej: 'BIOBIO', 'AYSÉN')
     tot_regiones["region_label"] = (
         tot_regiones["region_key"].str.split("-", n=1).str[-1]
     )
@@ -152,13 +158,14 @@ fecha_max = df["fecha"].max()
 # ===============================
 
 st.title("Dashboard de avance de encuesta por región")
-st.caption("Fuente: data_26112025.xlsx y totalmuestra.xlsx")
+st.caption("Fuente: data_27112025.xlsx y totalmuestra.xlsx")
 
 with st.expander("Detalle de limpieza de folios"):
     st.write(f"Folios totales en folio_survey: **{limpieza_info['total_folios']}**")
     st.write(f"Folios válidos usados en el análisis: **{limpieza_info['folios_validos']}**")
     st.write(
-        f"Folios filtrados (dummy, como 301-8, 302-6, etc.): **{limpieza_info['folios_filtrados']}**"
+        f"Folios filtrados (dummy, como 301-8, 302-6, etc.): "
+        f"**{limpieza_info['folios_filtrados']}**"
     )
 
 # ===============================
@@ -181,7 +188,7 @@ meta_diaria = st.sidebar.number_input(
     step=1.0,
 )
 
-# Lista de regiones a partir de tot_regiones (clave oficial igual a Region (Agregada))
+# Lista de regiones a partir de tot_regiones (clave oficial = region_key)
 regiones_disponibles = (
     tot_regiones[["region_key", "region_label"]]
     .drop_duplicates()
@@ -192,7 +199,7 @@ regiones_seleccionadas = st.sidebar.multiselect(
     "Regiones a mostrar (código + nombre)",
     options=list(regiones_disponibles["region_key"]),
     default=list(regiones_disponibles["region_key"]),
-    format_func=lambda k: f"{k}",
+    format_func=lambda k: f"{k}",  # muestra '01-TARAPACA', etc.
 )
 
 if not regiones_seleccionadas:
