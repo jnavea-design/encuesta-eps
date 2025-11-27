@@ -176,9 +176,44 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # MERGE
         st.write("**🔍 DIAGNÓSTICO - Antes del merge:**")
         st.write(f"- Registros en folio: {len(folio)}")
+        st.write(f"- IDs únicos en folio: {folio['campaign_assigned_id'].nunique()}")
         st.write(f"- Registros en entrevista: {len(entrevista_subset)}")
+        st.write(f"- IDs únicos en entrevista: {entrevista_subset['campaign_assigned_id'].nunique()}")
         
-        df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="left")
+        # Ver si hay IDs en común
+        ids_folio = set(folio['campaign_assigned_id'].dropna())
+        ids_entrevista = set(entrevista_subset['campaign_assigned_id'].dropna())
+        ids_comunes = ids_folio.intersection(ids_entrevista)
+        st.write(f"- IDs en común: {len(ids_comunes)}")
+        
+        # Intentar merge por campaign_assigned_id
+        if len(ids_comunes) > 0:
+            st.success(f"✅ Usando merge por campaign_assigned_id ({len(ids_comunes)} coincidencias)")
+            df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="inner")
+        else:
+            st.warning("⚠️ No hay IDs en común por campaign_assigned_id")
+            
+            # Intentar por folio
+            if "folio_encuesta" in entrevista.columns or "subjectId" in entrevista.columns:
+                st.info("🔄 Intentando merge por folio...")
+                
+                # Preparar columna de folio en entrevista
+                if "folio_encuesta" in entrevista.columns:
+                    entrevista["folio_match"] = entrevista["folio_encuesta"].astype(str)
+                elif "subjectId" in entrevista.columns:
+                    entrevista["folio_match"] = entrevista["subjectId"].astype(str)
+                
+                folio["folio_match"] = folio["folio"].astype(str)
+                
+                # Merge por folio
+                entrevista_subset_folio = entrevista[columnas_entrevista + ["folio_match"]].copy()
+                df = folio.merge(entrevista_subset_folio, on="folio_match", how="inner")
+                
+                st.success(f"✅ Merge por folio exitoso: {len(df)} registros")
+            else:
+                st.error("❌ No se puede hacer merge. Columnas disponibles en entrevista:")
+                st.write(list(entrevista.columns))
+                st.stop()
         
         st.write(f"- Registros después del merge: {len(df)}")
         st.write(f"- Registros con status null: {df['status'].isna().sum() if 'status' in df.columns else 'N/A'}")
@@ -457,7 +492,7 @@ fig.update_layout(
     margin=dict(l=0, r=0, t=40, b=40),
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width='stretch')
 
 # ===============================
 # TABLA DETALLE POR REGIÓN
@@ -532,7 +567,7 @@ with st.expander("👥 Ver detalle por encuestador"):
     
     st.dataframe(
         tabla_encuestador.sort_values(["Región", "Encuestador"]),
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
     )
 
