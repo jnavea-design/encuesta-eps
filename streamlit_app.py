@@ -19,33 +19,13 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/data_26112025.xlsx"
-TOTAL_PATH = "data/totalmuestra.xlsx"
+DATA_PATH = "data/data_26112025.xlsx"   # folio_survey + entrevista_survey
+TOTAL_PATH = "data/totalmuestra.xlsx"   # tabla simple Región / N° de usuarios(as)
 
 # ===============================
-# DICCIONARIO OFICIAL DE REGIONES
+# COLORES
 # ===============================
 
-REGION_DICT = {
-    "01": "01-TARAPACA",
-    "02": "02-ANTOFAGASTA",
-    "03": "03-ATACAMA",
-    "04": "04-COQUIMBO",
-    "05": "05-VALPARAISO",
-    "06": "06-LIBERTADOR BERNARDO O'HIGGINS",
-    "07": "07-MAULE",
-    "08": "08-BIOBIO",
-    "09": "09-ARAUCANÍA",
-    "10": "10-LOS LAGOS",
-    "11": "11-AYSÉN",
-    "12": "12-MAGALLANES",
-    "13": "13-METROPOLITANA",
-    "14": "14-LOS RIOS",
-    "15": "15-ARICA Y PARINACOTA",
-    "16": "16-ÑUBLE",
-}
-
-# Colores Rimisp
 COLORS = {
     "verde_oscuro": "#578D7B",
     "verde_medio": "#8AB366",
@@ -63,11 +43,12 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
     Carga:
       - data_26112025.xlsx (folio_survey + entrevista_survey)
-      - totalmuestra.xlsx  (Hoja1)
+      - totalmuestra.xlsx  (Hoja1 con columnas:
+            'Región', 'N° de usuarios(as)')
     Devuelve:
       - df: entrevistas COMPLETED con metadatos y region_key tipo '08-BIOBIO'
       - limpieza_info: stats de folios filtrados
-      - tot_regiones: muestra total por región + region_key
+      - tot_regiones: muestra total por región + region_key y region_label
     """
 
     # ---------- FOLIO SURVEY ----------
@@ -123,31 +104,24 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     df["comuna"] = df["comuna"].fillna("Sin comuna")
     df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
 
-    # ---------- TOTALMUESTRA ----------
-    tot = pd.read_excel(path_total, "Hoja1")
+    # ---------- TOTAL MUESTRA POR REGIÓN ----------
+    # Nuevo archivo sencillo:
+    # Región | N° de usuarios(as)
+    tot_regiones = pd.read_excel(path_total, "Hoja1")
 
-    tot_regiones = tot[tot["Nivel"] == "Región (total)"].copy()
-
-    # renombres básicos
     tot_regiones = tot_regiones.rename(
         columns={
-            "Región": "region_name",
+            "Región": "region_key",
             "N° de usuarios(as)": "total_muestra",
         }
     )
 
-    # construir código 2 dígitos desde 'Código región'
-    codigos = (
-        tot_regiones["Código región"]
-        .astype(str)
-        .str.replace(r"\.0$", "", regex=True)
-        .str.zfill(2)
+    # asegurar formato idéntico al de folio_survey
+    tot_regiones["region_key"] = (
+        tot_regiones["region_key"].astype(str).str.strip()
     )
 
-    # usar diccionario OFICIAL para obtener region_key tipo 08-BIOBIO
-    tot_regiones["region_key"] = codigos.map(REGION_DICT)
-
-    # por si acaso, etiqueta sin código (para mostrar en el eje X)
+    # etiqueta sin código (solo el nombre después del guion)
     tot_regiones["region_label"] = (
         tot_regiones["region_key"].str.split("-", n=1).str[-1]
     )
@@ -207,7 +181,7 @@ meta_diaria = st.sidebar.number_input(
     step=1.0,
 )
 
-# Lista de regiones a partir de tot_regiones (clave oficial)
+# Lista de regiones a partir de tot_regiones (clave oficial igual a Region (Agregada))
 regiones_disponibles = (
     tot_regiones[["region_key", "region_label"]]
     .drop_duplicates()
@@ -244,7 +218,7 @@ if df_corte.empty:
 dias_transcurridos = (fecha_corte - fecha_min).days + 1
 
 # ===============================
-# RESUMEN POR REGIÓN (usando region_key)
+# RESUMEN POR REGIÓN
 # ===============================
 
 realizadas_region = (
@@ -370,6 +344,7 @@ st.dataframe(tabla_region, use_container_width=True)
 # ===============================
 
 with st.expander("Ver detalle por encuestador (meta diaria x días)"):
+
     resumen_encuestador = (
         df_corte.groupby(["region_key", "encuestador"])["campaign_assigned_id"]
         .nunique()
