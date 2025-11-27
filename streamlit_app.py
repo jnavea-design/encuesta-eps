@@ -290,6 +290,22 @@ fecha_max = df["fecha"].max()
 # CABECERA
 # ===============================
 
+# Logos en la parte superior
+col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 2])
+
+with col2:
+    if os.path.exists("logos/logo_rimisp.png"):
+        st.image("logos/logo_rimisp.png", width=150)
+
+with col3:
+    if os.path.exists("logos/logo_bid.png"):
+        st.image("logos/logo_bid.png", width=150)
+
+with col4:
+    if os.path.exists("logos/logo_indap.png"):
+        st.image("logos/logo_indap.png", width=150)
+
+# Título debajo de los logos
 st.title("📊 Dashboard de avance de encuesta por región")
 st.caption(f"Fuente: {os.path.basename(DATA_PATH)} y {os.path.basename(TOTAL_PATH)}")
 
