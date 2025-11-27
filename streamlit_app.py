@@ -19,17 +19,11 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-# Archivo de datos con folio_survey y entrevista_survey
+# OJO: ajusta el nombre si cambias la fecha del archivo
 DATA_PATH = "data/data_27112025.xlsx"
-
-# Archivo con totales por región, formato:
-# Región | N° de usuarios(as)
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
-# ===============================
-# COLORES
-# ===============================
-
+# Colores Rimisp
 COLORS = {
     "verde_oscuro": "#578D7B",
     "verde_medio": "#8AB366",
@@ -46,29 +40,34 @@ COLORS = {
 def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
     Carga:
-      - data_27112025.xlsx (folio_survey + entrevista_survey)
-      - totalmuestra.xlsx  (Hoja1 con columnas 'Región', 'N° de usuarios(as)')
+      - data_XXXX.xlsx (folio_survey + entrevista_survey)
+      - totalmuestra.xlsx  (Región, N° de usuarios(as))
+
     Devuelve:
       - df: entrevistas COMPLETED con metadatos y region_key tipo '08-BIOBIO'
       - limpieza_info: stats de folios filtrados
-      - tot_regiones: muestra total por región + region_key y region_label
+      - tot_regiones: muestra total por región con region_key y region_label
     """
 
     # ---------- FOLIO SURVEY ----------
     xls = pd.ExcelFile(path_data)
     folio = pd.read_excel(xls, "folio_survey")
 
+    # Renombrar columnas relevantes
     folio = folio.rename(
         columns={
             "Region (Agregada)": "region_key",
             "Comuna (Agregada)": "comuna",
             "surveyor_full_name": "encuestador",
             "subject_folio": "folio",
-            "campaign_assigned_id": "campaign_assigned_id",
         }
     )
 
-    # limpiar folio
+    # Asegurar columnas clave
+    if "encuestador" not in folio.columns:
+        folio["encuestador"] = "Sin encuestador"
+
+    # Limpiar folio
     folio["folio"] = folio["folio"].astype(str)
     patron_folio_valido = r"^\d{5}-[0-9Kk]$"
 
@@ -77,30 +76,39 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     folios_validos = len(folio)
     folios_filtrados = total_folios - folios_validos
 
+    # Limpiar región en folio
+    folio["region_key"] = (
+        folio["region_key"]
+        .astype(str)
+        .str.strip()
+        .replace({"#N/D": np.nan})
+    )
+    folio = folio.dropna(subset=["region_key"]).copy()
+
     limpieza_info = {
         "total_folios": total_folios,
         "folios_validos": folios_validos,
         "folios_filtrados": folios_filtrados,
     }
 
-    # asegurar que region_key tenga el formato correcto como texto
-    # (ej: '08-BIOBIO', '11-AYSÉN', etc.)
-    folio["region_key"] = folio["region_key"].astype(str).str.strip()
-
     # ---------- ENTREVISTA SURVEY ----------
     entrevista = pd.read_excel(xls, "entrevista_survey")
-    entrevista = entrevista.rename(columns={"assignmentId": "campaign_assigned_id"})
+
+    # En algunos exports la columna viene como assignmentId, en otros campaign_assigned_id
+    if "assignmentId" in entrevista.columns:
+        entrevista = entrevista.rename(columns={"assignmentId": "campaign_assigned_id"})
 
     entrevista_subset = entrevista[
         ["campaign_assigned_id", "status", "completedAt_cl"]
     ].copy()
 
-    # MERGE folio + entrevista
+    # MERGE
     df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="left")
 
-    # sólo COMPLETED
+    # Sólo COMPLETED
     df = df[df["status"] == "COMPLETED"].copy()
 
+    # Fechas
     df["completedAt_cl"] = pd.to_datetime(df["completedAt_cl"], errors="coerce")
     df["fecha"] = df["completedAt_cl"].dt.date
     df = df[~df["fecha"].isna()].copy()
@@ -108,28 +116,41 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     df["comuna"] = df["comuna"].fillna("Sin comuna")
     df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
 
-    # ---------- TOTAL MUESTRA POR REGIÓN ----------
-    # Archivo simple:
-    # Región | N° de usuarios(as)
-    tot_regiones = pd.read_excel(path_total, "Hoja1")
+    # Normalizar region_key otra vez por si acaso
+    df["region_key"] = (
+        df["region_key"]
+        .astype(str)
+        .str.strip()
+    )
 
-    tot_regiones = tot_regiones.rename(
+    # ---------- TOTALMUESTRA ----------
+    tot = pd.read_excel(path_total)
+
+    # Esperamos columnas: Región, N° de usuarios(as)
+    tot_regiones = tot.rename(
         columns={
             "Región": "region_key",
             "N° de usuarios(as)": "total_muestra",
         }
     )
 
-    # asegurar formato idéntico al de folio_survey
-    # (ej: '08-BIOBIO', '11-AYSÉN'...)
+    # Limpiar filas vacías o totales raros
     tot_regiones["region_key"] = (
-        tot_regiones["region_key"].astype(str).str.strip()
+        tot_regiones["region_key"]
+        .astype(str)
+        .str.strip()
     )
 
-    # etiqueta sin el código para mostrar en el gráfico
-    # (ej: 'BIOBIO', 'AYSÉN')
+    tot_regiones = tot_regiones.replace({"region_key": {"nan": np.nan, "NaN": np.nan}})
+    tot_regiones = tot_regiones.dropna(subset=["region_key"]).copy()
+
+    # Clave de región es EXACTAMENTE como viene en ambos Excel: "08-BIOBIO"
+    # Creamos etiqueta corta para el gráfico
     tot_regiones["region_label"] = (
-        tot_regiones["region_key"].str.split("-", n=1).str[-1]
+        tot_regiones["region_key"]
+        .str.split("-", n=1)
+        .str[-1]
+        .str.strip()
     )
 
     return df, limpieza_info, tot_regiones
@@ -158,14 +179,13 @@ fecha_max = df["fecha"].max()
 # ===============================
 
 st.title("Dashboard de avance de encuesta por región")
-st.caption("Fuente: data_27112025.xlsx y totalmuestra.xlsx")
+st.caption(f"Fuente: {os.path.basename(DATA_PATH)} y {os.path.basename(TOTAL_PATH)}")
 
 with st.expander("Detalle de limpieza de folios"):
     st.write(f"Folios totales en folio_survey: **{limpieza_info['total_folios']}**")
     st.write(f"Folios válidos usados en el análisis: **{limpieza_info['folios_validos']}**")
     st.write(
-        f"Folios filtrados (dummy, como 301-8, 302-6, etc.): "
-        f"**{limpieza_info['folios_filtrados']}**"
+        f"Folios filtrados (dummy, como 301-8, 302-6, etc.): **{limpieza_info['folios_filtrados']}**"
     )
 
 # ===============================
@@ -188,7 +208,7 @@ meta_diaria = st.sidebar.number_input(
     step=1.0,
 )
 
-# Lista de regiones a partir de tot_regiones (clave oficial = region_key)
+# Lista de regiones a partir de tot_regiones (clave oficial)
 regiones_disponibles = (
     tot_regiones[["region_key", "region_label"]]
     .drop_duplicates()
@@ -199,7 +219,7 @@ regiones_seleccionadas = st.sidebar.multiselect(
     "Regiones a mostrar (código + nombre)",
     options=list(regiones_disponibles["region_key"]),
     default=list(regiones_disponibles["region_key"]),
-    format_func=lambda k: f"{k}",  # muestra '01-TARAPACA', etc.
+    format_func=lambda k: f"{k}",
 )
 
 if not regiones_seleccionadas:
@@ -225,7 +245,7 @@ if df_corte.empty:
 dias_transcurridos = (fecha_corte - fecha_min).days + 1
 
 # ===============================
-# RESUMEN POR REGIÓN
+# RESUMEN POR REGIÓN (usando region_key)
 # ===============================
 
 realizadas_region = (
@@ -351,7 +371,6 @@ st.dataframe(tabla_region, use_container_width=True)
 # ===============================
 
 with st.expander("Ver detalle por encuestador (meta diaria x días)"):
-
     resumen_encuestador = (
         df_corte.groupby(["region_key", "encuestador"])["campaign_assigned_id"]
         .nunique()
