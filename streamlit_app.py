@@ -56,7 +56,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # ---------- FOLIO SURVEY ----------
         xls = pd.ExcelFile(path_data)
         
-        # Verificar que exista la hoja
         if "folio_survey" not in xls.sheet_names:
             st.error(f"❌ La hoja 'folio_survey' no existe en {path_data}")
             st.write(f"Hojas disponibles: {xls.sheet_names}")
@@ -82,7 +81,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             "folio": "folio",
         }
         
-        # Renombrar solo las columnas que existen
         rename_dict = {}
         for col_original, col_nueva in columnas_mapeo.items():
             if col_original in folio.columns:
@@ -144,19 +142,10 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         elif "assignment_id" in entrevista.columns:
             entrevista = entrevista.rename(columns={"assignment_id": "campaign_assigned_id"})
         
-        # Verificar columnas necesarias
         if "campaign_assigned_id" not in entrevista.columns:
             st.error("❌ No se encuentra la columna de ID de asignación")
             st.write("Columnas disponibles:", list(entrevista.columns))
             st.stop()
-        
-        # DIAGNÓSTICO: Ver qué hay en entrevista
-        st.write("**🔍 DIAGNÓSTICO - entrevista_survey:**")
-        st.write(f"- Total de registros: {len(entrevista)}")
-        if "status" in entrevista.columns:
-            st.write(f"- Estados disponibles: {entrevista['status'].value_counts().to_dict()}")
-        st.write(f"- Primeras 3 filas:")
-        st.dataframe(entrevista.head(3))
         
         columnas_entrevista = ["campaign_assigned_id"]
         if "status" in entrevista.columns:
@@ -169,33 +158,28 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         entrevista_subset = entrevista[columnas_entrevista].copy()
         
-        # MERGE - Intentar por campaign_assigned_id
+        # MERGE
         ids_folio = set(folio['campaign_assigned_id'].dropna())
         ids_entrevista = set(entrevista_subset['campaign_assigned_id'].dropna())
         ids_comunes = ids_folio.intersection(ids_entrevista)
         
-        # Intentar merge por campaign_assigned_id
         if len(ids_comunes) > 0:
             df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="inner")
         else:
-            # Intentar por folio
             if "folio_encuesta" in entrevista.columns or "subjectId" in entrevista.columns:
-                # Preparar columna de folio en entrevista
                 if "folio_encuesta" in entrevista.columns:
                     entrevista["folio_match"] = entrevista["folio_encuesta"].astype(str)
                 elif "subjectId" in entrevista.columns:
                     entrevista["folio_match"] = entrevista["subjectId"].astype(str)
                 
                 folio["folio_match"] = folio["folio"].astype(str)
-                
-                # Merge por folio
                 entrevista_subset_folio = entrevista[columnas_entrevista + ["folio_match"]].copy()
                 df = folio.merge(entrevista_subset_folio, on="folio_match", how="inner")
             else:
                 st.error("❌ No se puede hacer merge. Revisa la estructura de los archivos.")
                 st.stop()
         
-        # Filtrar por status si existe
+        # Filtrar por status
         if "status" in df.columns:
             df = df[df["status"] == "COMPLETED"].copy()
         
@@ -205,19 +189,15 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             df["fecha"] = df["completedAt_cl"].dt.date
             df = df[~df["fecha"].isna()].copy()
         else:
-            # Si no hay fecha, usar fecha actual
             df["fecha"] = date.today()
         
         df["comuna"] = df["comuna"].fillna("Sin comuna")
         df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
-        
-        # Normalizar region_key
         df["region_key"] = df["region_key"].astype(str).str.strip().str.upper()
         
         # ---------- TOTALMUESTRA ----------
         tot = pd.read_excel(path_total)
         
-        # Mapeo flexible para totalmuestra
         mapeo_total = {
             "Región": "region_key",
             "Region": "region_key",
@@ -236,7 +216,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         tot_regiones = tot.rename(columns=rename_total)
         
-        # Limpiar
         tot_regiones["region_key"] = (
             tot_regiones["region_key"]
             .astype(str)
@@ -254,13 +233,10 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             .astype(float)
         )
         
-        # Crear etiqueta
+        # Crear etiqueta CON número
         tot_regiones["region_label"] = (
             tot_regiones["region_key"]
-            .str.split("-", n=1)
-            .str[-1]
-            .str.strip()
-            .str.title()
+            .str.replace("-", " - ")
         )
         
         # Ordenar por número de región
@@ -343,18 +319,18 @@ meta_diaria = st.sidebar.number_input(
     step=1.0,
 )
 
-# Lista de regiones
+# Lista de regiones (ordenadas por número)
 regiones_disponibles = (
-    tot_regiones[["region_key", "region_label"]]
+    tot_regiones[["region_key", "region_label", "region_num"]]
     .drop_duplicates()
-    .sort_values("region_key")
+    .sort_values("region_num")
 )
 
 regiones_seleccionadas = st.sidebar.multiselect(
     "Regiones a mostrar",
     options=list(regiones_disponibles["region_key"]),
     default=list(regiones_disponibles["region_key"]),
-    format_func=lambda k: f"{k}",
+    format_func=lambda k: regiones_disponibles[regiones_disponibles["region_key"] == k]["region_label"].iloc[0],
 )
 
 if not regiones_seleccionadas:
@@ -505,8 +481,8 @@ tabla_region = resumen_region[
 tabla_region["% Avance"] = tabla_region["% Avance"].apply(lambda x: f"{x:.1f}%")
 
 st.dataframe(
-    tabla_region.sort_values("% Avance", ascending=False),
-    use_container_width=True,
+    tabla_region,
+    width='stretch',
     hide_index=True,
 )
 
@@ -527,12 +503,15 @@ with st.expander("👥 Ver detalle por encuestador"):
         100 * resumen_encuestador["realizadas"] / resumen_encuestador["meta"]
     ).round(1)
     
-    # Merge con region_label
+    # Merge con region_label y region_num
     resumen_encuestador = resumen_encuestador.merge(
-        tot_regiones[["region_key", "region_label"]], 
+        tot_regiones[["region_key", "region_label", "region_num"]], 
         on="region_key", 
         how="left"
     )
+    
+    # Ordenar por región (número)
+    resumen_encuestador = resumen_encuestador.sort_values(["region_num", "encuestador"])
     
     tabla_encuestador = resumen_encuestador[
         ["region_label", "encuestador", "realizadas", "meta", "avance_pct"]
@@ -547,7 +526,7 @@ with st.expander("👥 Ver detalle por encuestador"):
     tabla_encuestador["% Avance"] = tabla_encuestador["% Avance"].apply(lambda x: f"{x:.1f}%")
     
     st.dataframe(
-        tabla_encuestador.sort_values(["Región", "Encuestador"]),
+        tabla_encuestador,
         width='stretch',
         hide_index=True,
     )
