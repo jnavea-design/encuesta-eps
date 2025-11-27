@@ -19,7 +19,7 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/data_26112025.xlsx"   # folio_survey + entrevista_survey
+DATA_PATH = "data/data_27112025.xlsx"   # folio_survey + entrevista_survey
 TOTAL_PATH = "data/totalmuestra.xlsx"   # tabla simple Región / N° de usuarios(as)
 
 # ===============================
