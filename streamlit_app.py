@@ -158,13 +158,11 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             entrevista = entrevista.rename(columns={"completed_at": "completedAt_cl"})
             columnas_entrevista.append("completedAt_cl")
         
-        # Agregar columnas de no respuesta y reemplazo
-        if "p1_0" in entrevista.columns:
-            columnas_entrevista.append("p1_0")
-        if "p1_1" in entrevista.columns:
-            columnas_entrevista.append("p1_1")
-        if "p1_2" in entrevista.columns:
-            columnas_entrevista.append("p1_2")
+        # Agregar TODAS las columnas que empiezan con p1_
+        for col in entrevista.columns:
+            if col.startswith("p1_") or col.startswith("P1_"):
+                if col not in columnas_entrevista:
+                    columnas_entrevista.append(col)
         
         entrevista_subset = entrevista[columnas_entrevista].copy()
         
@@ -192,17 +190,22 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # Clasificar registros
         df["tipo_registro"] = "Otro"
         
-        # No respuesta: cuando p1_0 tiene valor (respondió que NO acepta)
-        if "p1_0" in df.columns:
-            df.loc[df["p1_0"].notna(), "tipo_registro"] = "No respuesta"
-        
-        # Reemplazo: cuando p1_2 tiene valor
-        if "p1_2" in df.columns:
-            df.loc[df["p1_2"].notna(), "tipo_registro"] = "Reemplazo"
-        
-        # Completada/En progreso: status COMPLETED o IN_PROGRESS
+        # Primero: marcar como realizadas las que tienen status COMPLETED o IN_PROGRESS
         if "status" in df.columns:
             df.loc[df["status"].isin(["COMPLETED", "IN_PROGRESS"]), "tipo_registro"] = "Realizada"
+        
+        # Segundo: sobrescribir con No respuesta si p1_0 tiene valor (independiente del status)
+        # Buscar cualquier columna que empiece con p1_0
+        p1_0_cols = [col for col in df.columns if col.lower().startswith("p1_0")]
+        if p1_0_cols:
+            p1_0_col = p1_0_cols[0]
+            df.loc[df[p1_0_col].notna(), "tipo_registro"] = "No respuesta"
+        
+        # Tercero: sobrescribir con Reemplazo si p1_2 tiene valor (independiente del status)
+        p1_2_cols = [col for col in df.columns if col.lower().startswith("p1_2")]
+        if p1_2_cols:
+            p1_2_col = p1_2_cols[0]
+            df.loc[df[p1_2_col].notna(), "tipo_registro"] = "Reemplazo"
         
         # Procesar fechas
         if "completedAt_cl" in df.columns:
