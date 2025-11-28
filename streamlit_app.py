@@ -29,6 +29,7 @@ COLORS = {
     "verde_claro": "#7BB191",
     "verde_palido": "#C5DFB7",
     "naranjo": "#E97E3F",
+    "rojo": "#DC3545",
 }
 
 # ===============================
@@ -147,6 +148,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             st.write("Columnas disponibles:", list(entrevista.columns))
             st.stop()
         
+        # Columnas a extraer (incluyendo p1_0, p1_1, p1_2)
         columnas_entrevista = ["campaign_assigned_id"]
         if "status" in entrevista.columns:
             columnas_entrevista.append("status")
@@ -155,6 +157,14 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         elif "completed_at" in entrevista.columns:
             entrevista = entrevista.rename(columns={"completed_at": "completedAt_cl"})
             columnas_entrevista.append("completedAt_cl")
+        
+        # Agregar columnas de no respuesta y reemplazo
+        if "p1_0" in entrevista.columns:
+            columnas_entrevista.append("p1_0")
+        if "p1_1" in entrevista.columns:
+            columnas_entrevista.append("p1_1")
+        if "p1_2" in entrevista.columns:
+            columnas_entrevista.append("p1_2")
         
         entrevista_subset = entrevista[columnas_entrevista].copy()
         
@@ -179,15 +189,27 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
                 st.error("❌ No se puede hacer merge. Revisa la estructura de los archivos.")
                 st.stop()
         
-        # Filtrar por status
+        # Clasificar registros
+        df["tipo_registro"] = "Otro"
+        
+        # No respuesta: cuando p1_0 tiene valor (respondió que NO acepta)
+        if "p1_0" in df.columns:
+            df.loc[df["p1_0"].notna(), "tipo_registro"] = "No respuesta"
+        
+        # Reemplazo: cuando p1_2 tiene valor
+        if "p1_2" in df.columns:
+            df.loc[df["p1_2"].notna(), "tipo_registro"] = "Reemplazo"
+        
+        # Completada/En progreso: status COMPLETED o IN_PROGRESS
         if "status" in df.columns:
-            df = df[df["status"] == "COMPLETED"].copy()
+            df.loc[df["status"].isin(["COMPLETED", "IN_PROGRESS"]), "tipo_registro"] = "Realizada"
         
         # Procesar fechas
         if "completedAt_cl" in df.columns:
             df["completedAt_cl"] = pd.to_datetime(df["completedAt_cl"], errors="coerce")
             df["fecha"] = df["completedAt_cl"].dt.date
-            df = df[~df["fecha"].isna()].copy()
+            # Para los que no tienen fecha, usar fecha de hoy
+            df.loc[df["fecha"].isna(), "fecha"] = date.today()
         else:
             df["fecha"] = date.today()
         
@@ -280,7 +302,7 @@ with st.spinner("Cargando datos..."):
     df, limpieza_info, tot_regiones = load_data(DATA_PATH, TOTAL_PATH)
 
 if df.empty:
-    st.error("No se encontraron entrevistas COMPLETED.")
+    st.error("No se encontraron registros.")
     st.stop()
 
 fecha_min = df["fecha"].min()
@@ -365,7 +387,7 @@ df_filtrado_total = df[df["region_key"].isin(regiones_seleccionadas)].copy()
 
 if df_corte.empty:
     st.warning(
-        "⚠️ No hay entrevistas completadas hasta la fecha de corte seleccionada."
+        "⚠️ No hay registros hasta la fecha de corte seleccionada."
     )
     st.stop()
 
@@ -375,11 +397,23 @@ dias_transcurridos = (fecha_corte - fecha_min).days + 1
 # RESUMEN POR REGIÓN
 # ===============================
 
-realizadas_region = (
-    df_corte.groupby("region_key")["campaign_assigned_id"]
+# Contar por tipo de registro
+resumen_tipo = (
+    df_corte.groupby(["region_key", "tipo_registro"])["campaign_assigned_id"]
     .nunique()
-    .rename("realizadas")
+    .reset_index()
+    .pivot(index="region_key", columns="tipo_registro", values="campaign_assigned_id")
+    .fillna(0)
 )
+
+# Asegurar que existan todas las columnas
+for col in ["Realizada", "No respuesta", "Reemplazo"]:
+    if col not in resumen_tipo.columns:
+        resumen_tipo[col] = 0
+
+realizadas_region = resumen_tipo["Realizada"].rename("realizadas")
+no_respuestas_region = resumen_tipo["No respuesta"].rename("no_respuestas")
+reemplazos_region = resumen_tipo["Reemplazo"].rename("reemplazos")
 
 encuestadores_region = (
     df_filtrado_total.groupby("region_key")["encuestador"]
@@ -392,19 +426,39 @@ resumen_region = tot_regiones[
 ].copy()
 
 resumen_region = resumen_region.merge(realizadas_region, on="region_key", how="left")
+resumen_region = resumen_region.merge(no_respuestas_region, on="region_key", how="left")
+resumen_region = resumen_region.merge(reemplazos_region, on="region_key", how="left")
 resumen_region = resumen_region.merge(encuestadores_region, on="region_key", how="left")
 
-resumen_region[["realizadas", "n_encuestadores"]] = resumen_region[
-    ["realizadas", "n_encuestadores"]
+resumen_region[["realizadas", "no_respuestas", "reemplazos", "n_encuestadores"]] = resumen_region[
+    ["realizadas", "no_respuestas", "reemplazos", "n_encuestadores"]
 ].fillna(0)
 
+resumen_region["contactadas"] = (
+    resumen_region["realizadas"] + 
+    resumen_region["no_respuestas"] + 
+    resumen_region["reemplazos"]
+)
+
 resumen_region["pendientes"] = (
-    resumen_region["total_muestra"] - resumen_region["realizadas"]
+    resumen_region["total_muestra"] - resumen_region["contactadas"]
 ).clip(lower=0)
 
 resumen_region["avance_pct"] = (
     100 * resumen_region["realizadas"] / resumen_region["total_muestra"]
 ).round(1)
+
+resumen_region["tasa_no_respuesta"] = (
+    100 * resumen_region["no_respuestas"] / resumen_region["contactadas"]
+).round(1)
+
+resumen_region["tasa_reemplazo"] = (
+    100 * resumen_region["reemplazos"] / resumen_region["contactadas"]
+).round(1)
+
+# Reemplazar inf y nan
+resumen_region = resumen_region.replace([np.inf, -np.inf], 0)
+resumen_region = resumen_region.fillna(0)
 
 # Ordenar por número de región
 resumen_region = resumen_region.sort_values("region_num").reset_index(drop=True)
@@ -417,10 +471,27 @@ st.subheader("📈 Métricas Globales")
 
 total_muestra_global = float(tot_regiones["total_muestra"].sum())
 df_corte_global = df[df["fecha"] <= fecha_corte].copy()
-total_realizadas_global = int(df_corte_global["campaign_assigned_id"].nunique())
+
+total_realizadas_global = int((df_corte_global["tipo_registro"] == "Realizada").sum())
+total_no_respuestas_global = int((df_corte_global["tipo_registro"] == "No respuesta").sum())
+total_reemplazos_global = int((df_corte_global["tipo_registro"] == "Reemplazo").sum())
+total_contactadas_global = total_realizadas_global + total_no_respuestas_global + total_reemplazos_global
+
 avance_global = (
     100 * total_realizadas_global / total_muestra_global
     if total_muestra_global > 0
+    else 0
+)
+
+tasa_no_respuesta_global = (
+    100 * total_no_respuestas_global / total_contactadas_global
+    if total_contactadas_global > 0
+    else 0
+)
+
+tasa_reemplazo_global = (
+    100 * total_reemplazos_global / total_contactadas_global
+    if total_contactadas_global > 0
     else 0
 )
 
@@ -430,7 +501,13 @@ col2.metric("🎯 Meta Total", f"{int(total_muestra_global):,}")
 col3.metric("📊 Avance", f"{avance_global:.1f}%")
 col4.metric("📅 Días", dias_transcurridos)
 
-st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')}")
+col5, col6, col7, col8 = st.columns(4)
+col5.metric("📞 Contactadas", f"{total_contactadas_global:,}")
+col6.metric("❌ No respuestas", f"{total_no_respuestas_global:,}")
+col7.metric("🔄 Reemplazos", f"{total_reemplazos_global:,}")
+col8.metric("⏳ Pendientes", f"{int(total_muestra_global - total_contactadas_global):,}")
+
+st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} | **Tasa de no respuesta:** {tasa_no_respuesta_global:.1f}% | **Tasa de reemplazo:** {tasa_reemplazo_global:.1f}%")
 
 # ===============================
 # GRÁFICO: AVANCE POR REGIÓN
@@ -442,25 +519,41 @@ fig = go.Figure()
 
 fig.add_bar(
     y=resumen_region["region_label"],
-    x=resumen_region["total_muestra"],
-    name="Meta Total",
-    marker_color=COLORS["verde_palido"],
-    orientation='h',
-)
-
-fig.add_bar(
-    y=resumen_region["region_label"],
     x=resumen_region["realizadas"],
     name="Realizadas",
     marker_color=COLORS["verde_oscuro"],
     orientation='h',
 )
 
+fig.add_bar(
+    y=resumen_region["region_label"],
+    x=resumen_region["no_respuestas"],
+    name="No respuestas",
+    marker_color=COLORS["rojo"],
+    orientation='h',
+)
+
+fig.add_bar(
+    y=resumen_region["region_label"],
+    x=resumen_region["reemplazos"],
+    name="Reemplazos",
+    marker_color=COLORS["naranjo"],
+    orientation='h',
+)
+
+fig.add_bar(
+    y=resumen_region["region_label"],
+    x=resumen_region["pendientes"],
+    name="Pendientes",
+    marker_color=COLORS["verde_palido"],
+    orientation='h',
+)
+
 fig.update_layout(
-    barmode="overlay",
+    barmode="stack",
     xaxis_title="Número de encuestas",
     yaxis_title="",
-    legend_title="",
+    legend_title="Estado",
     height=max(400, len(resumen_region) * 40),
     margin=dict(l=0, r=0, t=40, b=40),
 )
@@ -477,24 +570,36 @@ tabla_region = resumen_region[
     [
         "region_label",
         "realizadas",
-        "total_muestra",
+        "no_respuestas",
+        "reemplazos",
+        "contactadas",
         "pendientes",
+        "total_muestra",
         "avance_pct",
+        "tasa_no_respuesta",
+        "tasa_reemplazo",
         "n_encuestadores",
     ]
 ].rename(
     columns={
         "region_label": "Región",
         "realizadas": "Realizadas",
-        "total_muestra": "Meta",
+        "no_respuestas": "No respuestas",
+        "reemplazos": "Reemplazos",
+        "contactadas": "Contactadas",
         "pendientes": "Pendientes",
+        "total_muestra": "Meta",
         "avance_pct": "% Avance",
+        "tasa_no_respuesta": "% No respuesta",
+        "tasa_reemplazo": "% Reemplazo",
         "n_encuestadores": "Encuestadores",
     }
 )
 
-# Formatear la tabla
+# Formatear porcentajes
 tabla_region["% Avance"] = tabla_region["% Avance"].apply(lambda x: f"{x:.1f}%")
+tabla_region["% No respuesta"] = tabla_region["% No respuesta"].apply(lambda x: f"{x:.1f}%")
+tabla_region["% Reemplazo"] = tabla_region["% Reemplazo"].apply(lambda x: f"{x:.1f}%")
 
 st.dataframe(
     tabla_region,
