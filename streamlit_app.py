@@ -378,9 +378,9 @@ st.sidebar.header("⚙️ Filtros y parámetros")
 
 fecha_corte = st.sidebar.date_input(
     "Fecha de corte",
-    value=fecha_max,
+    value=fecha_max,  # Usa la fecha máxima de los datos, no hoy
     min_value=fecha_min,
-    max_value=fecha_max,
+    max_value=date.today(),
 )
 
 meta_diaria = st.sidebar.number_input(
