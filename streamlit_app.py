@@ -224,7 +224,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             status_a_usar = "status"
         
         if status_a_usar:
-            mascara_realizada = df[status_a_usar].isin(["COMPLETED", "IN_PROGRESS"])
+            mascara_realizada = df[status_a_usar].isin(["COMPLETED"])
             df.loc[mascara_realizada, "tipo_registro"] = "Realizada"
         
         # Segundo: sobrescribir con Rechazo si tiene p1_1 (se negó)
