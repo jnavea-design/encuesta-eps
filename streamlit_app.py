@@ -227,9 +227,9 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             mascara_realizada = df[status_a_usar].isin(["COMPLETED", "IN_PROGRESS"])
             df.loc[mascara_realizada, "tipo_registro"] = "Realizada"
         
-        # Segundo: sobrescribir con No respuesta si tiene p1_1 (se negó)
+        # Segundo: sobrescribir con Rechazo si tiene p1_1 (se negó)
         if isinstance(tiene_p1_1, pd.Series):
-            df.loc[tiene_p1_1, "tipo_registro"] = "No respuesta"
+            df.loc[tiene_p1_1, "tipo_registro"] = "Rechazo"
         
         # Marcar específicamente los reemplazos (para conteo, pero quedan como realizadas)
         if isinstance(tiene_p1_2, pd.Series):
@@ -440,7 +440,7 @@ resumen_tipo = (
 )
 
 # Asegurar que existan todas las columnas
-for col in ["Realizada", "No respuesta"]:
+for col in ["Realizada", "Rechazo"]:
     if col not in resumen_tipo.columns:
         resumen_tipo[col] = 0
 
@@ -453,7 +453,7 @@ reemplazos_region = (
 )
 
 realizadas_region = resumen_tipo["Realizada"].rename("realizadas")
-no_respuestas_region = resumen_tipo["No respuesta"].rename("no_respuestas")
+rechazos_region = resumen_tipo["Rechazo"].rename("rechazos")
 
 encuestadores_region = (
     df_filtrado_total.groupby("region_key")["encuestador"]
@@ -466,17 +466,17 @@ resumen_region = tot_regiones[
 ].copy()
 
 resumen_region = resumen_region.merge(realizadas_region, on="region_key", how="left")
-resumen_region = resumen_region.merge(no_respuestas_region, on="region_key", how="left")
+resumen_region = resumen_region.merge(rechazos_region, on="region_key", how="left")
 resumen_region = resumen_region.merge(reemplazos_region, on="region_key", how="left")
 resumen_region = resumen_region.merge(encuestadores_region, on="region_key", how="left")
 
-resumen_region[["realizadas", "no_respuestas", "reemplazos", "n_encuestadores"]] = resumen_region[
-    ["realizadas", "no_respuestas", "reemplazos", "n_encuestadores"]
+resumen_region[["realizadas", "rechazos", "reemplazos", "n_encuestadores"]] = resumen_region[
+    ["realizadas", "rechazos", "reemplazos", "n_encuestadores"]
 ].fillna(0)
 
 resumen_region["contactadas"] = (
     resumen_region["realizadas"] + 
-    resumen_region["no_respuestas"]
+    resumen_region["rechazos"]
 )
 
 resumen_region["pendientes"] = (
@@ -487,8 +487,8 @@ resumen_region["avance_pct"] = (
     100 * resumen_region["contactadas"] / resumen_region["total_muestra"]
 ).round(1)
 
-resumen_region["tasa_no_respuesta"] = (
-    100 * resumen_region["no_respuestas"] / resumen_region["contactadas"]
+resumen_region["tasa_rechazo"] = (
+    100 * resumen_region["rechazos"] / resumen_region["contactadas"]
 ).round(1)
 
 resumen_region["tasa_reemplazo"] = (
@@ -512,11 +512,11 @@ total_muestra_global = float(tot_regiones["total_muestra"].sum())
 df_corte_global = df[df["fecha"] <= fecha_corte].copy()
 
 total_realizadas_global = int((df_corte_global["tipo_registro"] == "Realizada").sum())
-total_no_respuestas_global = int((df_corte_global["tipo_registro"] == "No respuesta").sum())
+total_rechazos_global = int((df_corte_global["tipo_registro"] == "Rechazo").sum())
 total_reemplazos_global = int(df_corte_global["es_reemplazo"].sum())
-total_contactadas_global = total_realizadas_global + total_no_respuestas_global
+total_contactadas_global = total_realizadas_global + total_rechazos_global
 
-# Avance incluye realizadas + no respuestas
+# Avance incluye realizadas + rechazos
 avance_global = (
     100 * total_contactadas_global / total_muestra_global
     if total_muestra_global > 0
@@ -528,7 +528,7 @@ col1.metric("✅ Realizadas", f"{total_realizadas_global:,}")
 col2.metric("🎯 Meta Total", f"{int(total_muestra_global):,}")
 col3.metric("📊 Avance", f"{avance_global:.1f}%")
 col4.metric("📅 Días", dias_transcurridos)
-col5.metric("❌ No respuestas", f"{total_no_respuestas_global:,}")
+col5.metric("❌ Rechazos", f"{total_rechazos_global:,}")
 col6.metric("🔄 Reemplazos", f"{total_reemplazos_global:,}")
 
 st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')}")
@@ -551,8 +551,8 @@ fig.add_bar(
 
 fig.add_bar(
     y=resumen_region["region_label"],
-    x=resumen_region["no_respuestas"],
-    name="No respuestas",
+    x=resumen_region["rechazos"],
+    name="Rechazos",
     marker_color=COLORS["rojo"],
     orientation='h',
 )
@@ -586,13 +586,13 @@ tabla_region = resumen_region[
     [
         "region_label",
         "realizadas",
-        "no_respuestas",
+        "rechazos",
         "reemplazos",
         "contactadas",
         "pendientes",
         "total_muestra",
         "avance_pct",
-        "tasa_no_respuesta",
+        "tasa_rechazo",
         "tasa_reemplazo",
         "n_encuestadores",
     ]
@@ -600,13 +600,13 @@ tabla_region = resumen_region[
     columns={
         "region_label": "Región",
         "realizadas": "Realizadas",
-        "no_respuestas": "No respuestas",
+        "rechazos": "Rechazos",
         "reemplazos": "Reemplazos",
         "contactadas": "Contactadas",
         "pendientes": "Pendientes",
         "total_muestra": "Meta",
         "avance_pct": "% Avance",
-        "tasa_no_respuesta": "% No respuesta",
+        "tasa_rechazo": "% Rechazo",
         "tasa_reemplazo": "% Reemplazo",
         "n_encuestadores": "Encuestadores",
     }
@@ -614,7 +614,7 @@ tabla_region = resumen_region[
 
 # Formatear porcentajes
 tabla_region["% Avance"] = tabla_region["% Avance"].apply(lambda x: f"{x:.1f}%")
-tabla_region["% No respuesta"] = tabla_region["% No respuesta"].apply(lambda x: f"{x:.1f}%")
+tabla_region["% Rechazo"] = tabla_region["% Rechazo"].apply(lambda x: f"{x:.1f}%")
 tabla_region["% Reemplazo"] = tabla_region["% Reemplazo"].apply(lambda x: f"{x:.1f}%")
 
 st.dataframe(
