@@ -190,22 +190,42 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # Clasificar registros
         df["tipo_registro"] = "Otro"
         
-        # Primero: marcar como realizadas las que tienen status COMPLETED o IN_PROGRESS
-        if "status" in df.columns:
-            df.loc[df["status"].isin(["COMPLETED", "IN_PROGRESS"]), "tipo_registro"] = "Realizada"
-        
-        # Segundo: sobrescribir con No respuesta si p1_0 tiene valor (independiente del status)
-        # Buscar cualquier columna que empiece con p1_0
-        p1_0_cols = [col for col in df.columns if col.lower().startswith("p1_0")]
-        if p1_0_cols:
-            p1_0_col = p1_0_cols[0]
-            df.loc[df[p1_0_col].notna(), "tipo_registro"] = "No respuesta"
-        
-        # Tercero: sobrescribir con Reemplazo si p1_2 tiene valor (independiente del status)
+        # Buscar columnas p1_1 y p1_2
+        p1_1_cols = [col for col in df.columns if col.lower().startswith("p1_1")]
         p1_2_cols = [col for col in df.columns if col.lower().startswith("p1_2")]
-        if p1_2_cols:
-            p1_2_col = p1_2_cols[0]
-            df.loc[df[p1_2_col].notna(), "tipo_registro"] = "Reemplazo"
+        
+        p1_1_col = p1_1_cols[0] if p1_1_cols else None
+        p1_2_col = p1_2_cols[0] if p1_2_cols else None
+        
+        # Crear máscaras para cada tipo
+        tiene_p1_1 = False
+        tiene_p1_2 = False
+        
+        if p1_1_col:
+            # p1_1 tiene valor = rechazo
+            tiene_p1_1 = (df[p1_1_col].notna()) & (df[p1_1_col] != "")
+        
+        if p1_2_col:
+            # p1_2 tiene valor = reemplazo
+            tiene_p1_2 = (df[p1_2_col].notna()) & (df[p1_2_col] != "")
+        
+        # Clasificar en orden de prioridad
+        if "status" in df.columns:
+            # Primero: Realizadas (COMPLETED o IN_PROGRESS y NO tienen p1_1 ni p1_2)
+            mascara_realizada = (
+                df["status"].isin(["COMPLETED", "IN_PROGRESS"]) & 
+                (~tiene_p1_1 if isinstance(tiene_p1_1, pd.Series) else True) & 
+                (~tiene_p1_2 if isinstance(tiene_p1_2, pd.Series) else True)
+            )
+            df.loc[mascara_realizada, "tipo_registro"] = "Realizada"
+        
+        # Segundo: No respuesta (tiene p1_1 con valor)
+        if isinstance(tiene_p1_1, pd.Series):
+            df.loc[tiene_p1_1, "tipo_registro"] = "No respuesta"
+        
+        # Tercero: Reemplazo (tiene p1_2 con valor)
+        if isinstance(tiene_p1_2, pd.Series):
+            df.loc[tiene_p1_2, "tipo_registro"] = "Reemplazo"
         
         # Procesar fechas
         if "completedAt_cl" in df.columns:
@@ -478,7 +498,6 @@ df_corte_global = df[df["fecha"] <= fecha_corte].copy()
 total_realizadas_global = int((df_corte_global["tipo_registro"] == "Realizada").sum())
 total_no_respuestas_global = int((df_corte_global["tipo_registro"] == "No respuesta").sum())
 total_reemplazos_global = int((df_corte_global["tipo_registro"] == "Reemplazo").sum())
-total_contactadas_global = total_realizadas_global + total_no_respuestas_global + total_reemplazos_global
 
 avance_global = (
     100 * total_realizadas_global / total_muestra_global
@@ -486,31 +505,15 @@ avance_global = (
     else 0
 )
 
-tasa_no_respuesta_global = (
-    100 * total_no_respuestas_global / total_contactadas_global
-    if total_contactadas_global > 0
-    else 0
-)
-
-tasa_reemplazo_global = (
-    100 * total_reemplazos_global / total_contactadas_global
-    if total_contactadas_global > 0
-    else 0
-)
-
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 col1.metric("✅ Realizadas", f"{total_realizadas_global:,}")
 col2.metric("🎯 Meta Total", f"{int(total_muestra_global):,}")
 col3.metric("📊 Avance", f"{avance_global:.1f}%")
 col4.metric("📅 Días", dias_transcurridos)
+col5.metric("❌ No respuestas", f"{total_no_respuestas_global:,}")
+col6.metric("🔄 Reemplazos", f"{total_reemplazos_global:,}")
 
-col5, col6, col7, col8 = st.columns(4)
-col5.metric("📞 Contactadas", f"{total_contactadas_global:,}")
-col6.metric("❌ No respuestas", f"{total_no_respuestas_global:,}")
-col7.metric("🔄 Reemplazos", f"{total_reemplazos_global:,}")
-col8.metric("⏳ Pendientes", f"{int(total_muestra_global - total_contactadas_global):,}")
-
-st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} | **Tasa de no respuesta:** {tasa_no_respuesta_global:.1f}% | **Tasa de reemplazo:** {tasa_reemplazo_global:.1f}%")
+st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')}")
 
 # ===============================
 # GRÁFICO: AVANCE POR REGIÓN
