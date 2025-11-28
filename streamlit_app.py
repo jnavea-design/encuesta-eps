@@ -341,6 +341,9 @@ if df.empty:
 fecha_min = df["fecha"].min()
 fecha_max = df["fecha"].max()
 
+# Debug: mostrar fechas
+st.sidebar.info(f"Datos disponibles: {fecha_min} a {fecha_max}")
+
 # ===============================
 # CABECERA
 # ===============================
@@ -425,6 +428,10 @@ if df_corte.empty:
     st.stop()
 
 dias_transcurridos = (fecha_corte - fecha_min).days + 1
+
+# Ajustar si la fecha de corte es mayor a la fecha máxima real de datos
+if fecha_corte > fecha_max:
+    dias_transcurridos = (fecha_max - fecha_min).days + 1
 
 # ===============================
 # RESUMEN POR REGIÓN
