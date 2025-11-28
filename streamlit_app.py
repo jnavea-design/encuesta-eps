@@ -172,7 +172,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         ids_comunes = ids_folio.intersection(ids_entrevista)
         
         if len(ids_comunes) > 0:
-            df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="inner")
+            df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="left")
         else:
             if "folio_encuesta" in entrevista.columns or "subjectId" in entrevista.columns:
                 if "folio_encuesta" in entrevista.columns:
@@ -182,7 +182,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
                 
                 folio["folio_match"] = folio["folio"].astype(str)
                 entrevista_subset_folio = entrevista[columnas_entrevista + ["folio_match"]].copy()
-                df = folio.merge(entrevista_subset_folio, on="folio_match", how="inner")
+                df = folio.merge(entrevista_subset_folio, on="folio_match", how="left")
             else:
                 st.error("❌ No se puede hacer merge. Revisa la estructura de los archivos.")
                 st.stop()
@@ -202,30 +202,32 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         tiene_p1_2 = False
         
         if p1_1_col:
-            # p1_1 tiene valor = rechazo
+            # p1_1 tiene valor = rechazo (NO respuesta)
             tiene_p1_1 = (df[p1_1_col].notna()) & (df[p1_1_col] != "")
         
         if p1_2_col:
-            # p1_2 tiene valor = reemplazo
+            # p1_2 tiene valor = reemplazo (pero va en REALIZADAS)
             tiene_p1_2 = (df[p1_2_col].notna()) & (df[p1_2_col] != "")
         
-        # Clasificar en orden de prioridad
-        if "status" in df.columns:
-            # Primero: Realizadas (COMPLETED o IN_PROGRESS y NO tienen p1_1 ni p1_2)
-            mascara_realizada = (
-                df["status"].isin(["COMPLETED", "IN_PROGRESS"]) & 
-                (~tiene_p1_1 if isinstance(tiene_p1_1, pd.Series) else True) & 
-                (~tiene_p1_2 if isinstance(tiene_p1_2, pd.Series) else True)
-            )
-            df.loc[mascara_realizada, "tipo_registro"] = "Realizada"
-        
-        # Segundo: No respuesta (tiene p1_1 con valor)
+        # Clasificar
+        # No respuesta: tiene p1_1 (se negó)
         if isinstance(tiene_p1_1, pd.Series):
             df.loc[tiene_p1_1, "tipo_registro"] = "No respuesta"
         
-        # Tercero: Reemplazo (tiene p1_2 con valor)
+        # Realizada: COMPLETED, IN_PROGRESS, o tiene p1_2 (reemplazo)
+        if "status" in df.columns:
+            mascara_realizada = (
+                df["status"].isin(["COMPLETED", "IN_PROGRESS"]) | 
+                (tiene_p1_2 if isinstance(tiene_p1_2, pd.Series) else False)
+            )
+            # Solo marcar como realizada si NO es no respuesta
+            df.loc[mascara_realizada & (df["tipo_registro"] != "No respuesta"), "tipo_registro"] = "Realizada"
+        
+        # Marcar específicamente los reemplazos (para conteo, pero se muestran como realizadas)
         if isinstance(tiene_p1_2, pd.Series):
-            df.loc[tiene_p1_2, "tipo_registro"] = "Reemplazo"
+            df["es_reemplazo"] = tiene_p1_2
+        else:
+            df["es_reemplazo"] = False
         
         # Procesar fechas
         if "completedAt_cl" in df.columns:
@@ -430,13 +432,20 @@ resumen_tipo = (
 )
 
 # Asegurar que existan todas las columnas
-for col in ["Realizada", "No respuesta", "Reemplazo"]:
+for col in ["Realizada", "No respuesta"]:
     if col not in resumen_tipo.columns:
         resumen_tipo[col] = 0
 
+# Contar reemplazos por separado (no van al gráfico pero sí a métricas)
+reemplazos_region = (
+    df_corte[df_corte["es_reemplazo"] == True]
+    .groupby("region_key")["campaign_assigned_id"]
+    .nunique()
+    .rename("reemplazos")
+)
+
 realizadas_region = resumen_tipo["Realizada"].rename("realizadas")
 no_respuestas_region = resumen_tipo["No respuesta"].rename("no_respuestas")
-reemplazos_region = resumen_tipo["Reemplazo"].rename("reemplazos")
 
 encuestadores_region = (
     df_filtrado_total.groupby("region_key")["encuestador"]
@@ -459,8 +468,7 @@ resumen_region[["realizadas", "no_respuestas", "reemplazos", "n_encuestadores"]]
 
 resumen_region["contactadas"] = (
     resumen_region["realizadas"] + 
-    resumen_region["no_respuestas"] + 
-    resumen_region["reemplazos"]
+    resumen_region["no_respuestas"]
 )
 
 resumen_region["pendientes"] = (
@@ -468,7 +476,7 @@ resumen_region["pendientes"] = (
 ).clip(lower=0)
 
 resumen_region["avance_pct"] = (
-    100 * resumen_region["realizadas"] / resumen_region["total_muestra"]
+    100 * resumen_region["contactadas"] / resumen_region["total_muestra"]
 ).round(1)
 
 resumen_region["tasa_no_respuesta"] = (
@@ -497,10 +505,12 @@ df_corte_global = df[df["fecha"] <= fecha_corte].copy()
 
 total_realizadas_global = int((df_corte_global["tipo_registro"] == "Realizada").sum())
 total_no_respuestas_global = int((df_corte_global["tipo_registro"] == "No respuesta").sum())
-total_reemplazos_global = int((df_corte_global["tipo_registro"] == "Reemplazo").sum())
+total_reemplazos_global = int(df_corte_global["es_reemplazo"].sum())
+total_contactadas_global = total_realizadas_global + total_no_respuestas_global
 
+# Avance incluye realizadas + no respuestas
 avance_global = (
-    100 * total_realizadas_global / total_muestra_global
+    100 * total_contactadas_global / total_muestra_global
     if total_muestra_global > 0
     else 0
 )
@@ -526,7 +536,7 @@ fig = go.Figure()
 fig.add_bar(
     y=resumen_region["region_label"],
     x=resumen_region["realizadas"],
-    name="Realizadas",
+    name="Realizadas (incluye reemplazos)",
     marker_color=COLORS["verde_oscuro"],
     orientation='h',
 )
@@ -536,14 +546,6 @@ fig.add_bar(
     x=resumen_region["no_respuestas"],
     name="No respuestas",
     marker_color=COLORS["rojo"],
-    orientation='h',
-)
-
-fig.add_bar(
-    y=resumen_region["region_label"],
-    x=resumen_region["reemplazos"],
-    name="Reemplazos",
-    marker_color=COLORS["naranjo"],
     orientation='h',
 )
 
