@@ -98,6 +98,12 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             st.write("Columnas disponibles:", list(folio.columns))
             st.stop()
         
+        # Verificar si campaign_status existe en folio
+        if "campaign_status" in folio.columns:
+            folio = folio.rename(columns={"campaign_status": "status_folio"})
+        elif "status" in folio.columns:
+            folio = folio.rename(columns={"status": "status_folio"})
+        
         # Asegurar columnas opcionales
         if "encuestador" not in folio.columns:
             folio["encuestador"] = "Sin encuestador"
@@ -210,20 +216,22 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             tiene_p1_2 = (df[p1_2_col].notna()) & (df[p1_2_col] != "")
         
         # Clasificar
-        # No respuesta: tiene p1_1 (se negó)
+        # Primero: marcar todo lo que tiene status COMPLETED o IN_PROGRESS (de folio o entrevista)
+        status_a_usar = None
+        if "status_folio" in df.columns:
+            status_a_usar = "status_folio"
+        elif "status" in df.columns:
+            status_a_usar = "status"
+        
+        if status_a_usar:
+            mascara_realizada = df[status_a_usar].isin(["COMPLETED", "IN_PROGRESS"])
+            df.loc[mascara_realizada, "tipo_registro"] = "Realizada"
+        
+        # Segundo: sobrescribir con No respuesta si tiene p1_1 (se negó)
         if isinstance(tiene_p1_1, pd.Series):
             df.loc[tiene_p1_1, "tipo_registro"] = "No respuesta"
         
-        # Realizada: COMPLETED, IN_PROGRESS, o tiene p1_2 (reemplazo)
-        if "status" in df.columns:
-            mascara_realizada = (
-                df["status"].isin(["COMPLETED", "IN_PROGRESS"]) | 
-                (tiene_p1_2 if isinstance(tiene_p1_2, pd.Series) else False)
-            )
-            # Solo marcar como realizada si NO es no respuesta
-            df.loc[mascara_realizada & (df["tipo_registro"] != "No respuesta"), "tipo_registro"] = "Realizada"
-        
-        # Marcar específicamente los reemplazos (para conteo, pero se muestran como realizadas)
+        # Marcar específicamente los reemplazos (para conteo, pero quedan como realizadas)
         if isinstance(tiene_p1_2, pd.Series):
             df["es_reemplazo"] = tiene_p1_2
         else:
