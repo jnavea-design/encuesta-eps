@@ -283,9 +283,9 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         tot_regiones = tot_regiones.sort_values("region_num").reset_index(drop=True)
         
         # DEBUG
-        st.write("DEBUG - Distribución de status:", df['status'].value_counts())
-        st.write("DEBUG - Distribución de tipo_registro:", df['tipo_registro'].value_counts())
-        st.write("DEBUG - Total registros:", len(df))
+        #st.write("DEBUG - Distribución de status:", df['status'].value_counts())
+        #st.write("DEBUG - Distribución de tipo_registro:", df['tipo_registro'].value_counts())
+        #st.write("DEBUG - Total registros:", len(df))
         
         return df, limpieza_info, tot_regiones
         
