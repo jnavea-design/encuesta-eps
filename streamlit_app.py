@@ -65,7 +65,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         entrevista = pd.read_excel(xls, "entrevista_survey")
         
-        st.write("DEBUG - Columnas en entrevista_survey:", list(entrevista.columns)[:20])
+        #st.write("DEBUG - Columnas en entrevista_survey:", list(entrevista.columns)[:20])
         
         # Identificar columna de folio
         folio_col = None
