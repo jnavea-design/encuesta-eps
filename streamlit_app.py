@@ -52,90 +52,12 @@ def verificar_archivos():
 def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
     Carga y prepara los datos de las encuestas
+    AHORA USA ENTREVISTA_SURVEY COMO FUENTE PRINCIPAL
     """
     try:
-        # ---------- FOLIO SURVEY ----------
+        # ---------- ENTREVISTA SURVEY (AHORA ES LA PRINCIPAL) ----------
         xls = pd.ExcelFile(path_data)
         
-        if "folio_survey" not in xls.sheet_names:
-            st.error(f"❌ La hoja 'folio_survey' no existe en {path_data}")
-            st.write(f"Hojas disponibles: {xls.sheet_names}")
-            st.stop()
-        
-        folio = pd.read_excel(xls, "folio_survey")
-        
-        # Mapeo flexible de columnas
-        columnas_mapeo = {
-            "Region (Agregada)": "region_key",
-            "Region(Agregada)": "region_key",
-            "Region": "region_key",
-            "region": "region_key",
-            "Comuna (Agregada)": "comuna",
-            "Comuna(Agregada)": "comuna",
-            "Comuna": "comuna",
-            "comuna": "comuna",
-            "surveyor_full_name": "encuestador",
-            "Encuestador": "encuestador",
-            "encuestador": "encuestador",
-            "subject_folio": "folio",
-            "Folio": "folio",
-            "folio": "folio",
-        }
-        
-        rename_dict = {}
-        for col_original, col_nueva in columnas_mapeo.items():
-            if col_original in folio.columns:
-                rename_dict[col_original] = col_nueva
-        
-        folio = folio.rename(columns=rename_dict)
-        
-        # Verificar columnas críticas
-        columnas_requeridas = ["region_key", "folio"]
-        columnas_faltantes = [col for col in columnas_requeridas if col not in folio.columns]
-        
-        if columnas_faltantes:
-            st.error(f"❌ Faltan columnas requeridas: {columnas_faltantes}")
-            st.write("Columnas disponibles:", list(folio.columns))
-            st.stop()
-        
-        # Verificar si campaign_status existe en folio
-        if "campaign_status" in folio.columns:
-            folio = folio.rename(columns={"campaign_status": "status_folio"})
-        elif "status" in folio.columns:
-            folio = folio.rename(columns={"status": "status_folio"})
-        
-        # Asegurar columnas opcionales
-        if "encuestador" not in folio.columns:
-            folio["encuestador"] = "Sin encuestador"
-        if "comuna" not in folio.columns:
-            folio["comuna"] = "Sin comuna"
-        
-        # Limpiar folio
-        folio["folio"] = folio["folio"].astype(str)
-        patron_folio_valido = r"^\d{5}-[0-9Kk]$"
-        
-        total_folios = len(folio)
-        folio = folio[folio["folio"].str.match(patron_folio_valido, na=False)].copy()
-        folios_validos = len(folio)
-        folios_filtrados = total_folios - folios_validos
-        
-        # Limpiar región en folio
-        folio["region_key"] = (
-            folio["region_key"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            .replace({"#N/D": np.nan, "NAN": np.nan})
-        )
-        folio = folio.dropna(subset=["region_key"]).copy()
-        
-        limpieza_info = {
-            "total_folios": total_folios,
-            "folios_validos": folios_validos,
-            "folios_filtrados": folios_filtrados,
-        }
-        
-        # ---------- ENTREVISTA SURVEY ----------
         if "entrevista_survey" not in xls.sheet_names:
             st.error(f"❌ La hoja 'entrevista_survey' no existe en {path_data}")
             st.write(f"Hojas disponibles: {xls.sheet_names}")
@@ -143,112 +65,175 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         entrevista = pd.read_excel(xls, "entrevista_survey")
         
-        # Flexibilidad en nombres de columnas
-        if "assignmentId" in entrevista.columns:
-            entrevista = entrevista.rename(columns={"assignmentId": "campaign_assigned_id"})
-        elif "assignment_id" in entrevista.columns:
-            entrevista = entrevista.rename(columns={"assignment_id": "campaign_assigned_id"})
+        st.write("DEBUG - Columnas en entrevista_survey:", list(entrevista.columns)[:20])
         
-        if "campaign_assigned_id" not in entrevista.columns:
-            st.error("❌ No se encuentra la columna de ID de asignación")
+        # Identificar columna de folio
+        folio_col = None
+        for col in ['folio_encuesta', 'subjectId', 'subject_id', 'folio']:
+            if col in entrevista.columns:
+                folio_col = col
+                break
+        
+        if not folio_col:
+            st.error("❌ No se encuentra columna de folio en entrevista_survey")
             st.write("Columnas disponibles:", list(entrevista.columns))
             st.stop()
         
-        # Columnas a extraer (incluyendo p1_0, p1_1, p1_2)
-        columnas_entrevista = ["campaign_assigned_id"]
-        if "status" in entrevista.columns:
-            columnas_entrevista.append("status")
-        if "completedAt_cl" in entrevista.columns:
-            columnas_entrevista.append("completedAt_cl")
-        elif "completed_at" in entrevista.columns:
-            entrevista = entrevista.rename(columns={"completed_at": "completedAt_cl"})
-            columnas_entrevista.append("completedAt_cl")
+        # Renombrar a 'folio'
+        entrevista = entrevista.rename(columns={folio_col: 'folio'})
         
-        # Agregar TODAS las columnas que empiezan con p1_
+        # Limpiar folio
+        entrevista["folio"] = entrevista["folio"].astype(str).str.strip()
+        patron_folio_valido = r"^\d{5}-[0-9Kk]$"
+        
+        total_registros = len(entrevista)
+        entrevista = entrevista[entrevista["folio"].str.match(patron_folio_valido, na=False)].copy()
+        registros_validos = len(entrevista)
+        registros_filtrados = total_registros - registros_validos
+        
+        limpieza_info = {
+            "total_folios": total_registros,
+            "folios_validos": registros_validos,
+            "folios_filtrados": registros_filtrados,
+        }
+        
+        # Identificar columna de status
+        status_col = None
+        for col in ['status', 'Status', 'campaign_status']:
+            if col in entrevista.columns:
+                status_col = col
+                break
+        
+        if not status_col:
+            st.error("❌ No se encuentra columna de status en entrevista_survey")
+            st.stop()
+        
+        entrevista = entrevista.rename(columns={status_col: 'status'})
+        
+        # Identificar columna de fecha completado
+        fecha_col = None
+        for col in ['completedAt_cl', 'completed_at', 'completedAt', 'fecha_completado']:
+            if col in entrevista.columns:
+                fecha_col = col
+                break
+        
+        if fecha_col:
+            entrevista = entrevista.rename(columns={fecha_col: 'completedAt_cl'})
+            entrevista["completedAt_cl"] = pd.to_datetime(entrevista["completedAt_cl"], errors="coerce")
+            entrevista["fecha"] = entrevista["completedAt_cl"].dt.date
+        else:
+            entrevista["fecha"] = date.today()
+        
+        # Buscar columnas p1_0, p1_1, p1_2
+        p1_0_col = None
+        p1_1_col = None
+        p1_2_col = None
+        
         for col in entrevista.columns:
-            if col.startswith("p1_") or col.startswith("P1_"):
-                if col not in columnas_entrevista:
-                    columnas_entrevista.append(col)
+            col_lower = col.lower()
+            if 'p1_0' in col_lower and not p1_0_col:
+                p1_0_col = col
+            elif 'p1_1' in col_lower and not p1_1_col:
+                p1_1_col = col
+            elif 'p1_2' in col_lower and not p1_2_col:
+                p1_2_col = col
         
-        entrevista_subset = entrevista[columnas_entrevista].copy()
+        # CLASIFICAR REGISTROS
+        entrevista["tipo_registro"] = "Otro"
+        entrevista["es_reemplazo"] = False
         
-        # MERGE
-        ids_folio = set(folio['campaign_assigned_id'].dropna())
-        ids_entrevista = set(entrevista_subset['campaign_assigned_id'].dropna())
-        ids_comunes = ids_folio.intersection(ids_entrevista)
+        # 1. COMPLETED = Realizada
+        mascara_completed = entrevista['status'] == 'COMPLETED'
+        entrevista.loc[mascara_completed, "tipo_registro"] = "Realizada"
         
-        if len(ids_comunes) > 0:
-            df = folio.merge(entrevista_subset, on="campaign_assigned_id", how="left")
-        else:
-            if "folio_encuesta" in entrevista.columns or "subjectId" in entrevista.columns:
-                if "folio_encuesta" in entrevista.columns:
-                    entrevista["folio_match"] = entrevista["folio_encuesta"].astype(str)
-                elif "subjectId" in entrevista.columns:
-                    entrevista["folio_match"] = entrevista["subjectId"].astype(str)
-                
-                folio["folio_match"] = folio["folio"].astype(str)
-                entrevista_subset_folio = entrevista[columnas_entrevista + ["folio_match"]].copy()
-                df = folio.merge(entrevista_subset_folio, on="folio_match", how="left")
-            else:
-                st.error("❌ No se puede hacer merge. Revisa la estructura de los archivos.")
-                st.stop()
-        
-        # Clasificar registros
-        df["tipo_registro"] = "Otro"
-        
-        # Buscar columnas p1_1 y p1_2
-        p1_1_cols = [col for col in df.columns if col.lower().startswith("p1_1")]
-        p1_2_cols = [col for col in df.columns if col.lower().startswith("p1_2")]
-        
-        p1_1_col = p1_1_cols[0] if p1_1_cols else None
-        p1_2_col = p1_2_cols[0] if p1_2_cols else None
-        
-        # Crear máscaras para cada tipo
-        tiene_p1_1 = False
-        tiene_p1_2 = False
-        
+        # 2. Si tiene p1_1 con valor = Rechazo (se negó a responder)
         if p1_1_col:
-            # p1_1 tiene valor = rechazo (NO respuesta)
-            tiene_p1_1 = (df[p1_1_col].notna()) & (df[p1_1_col] != "")
+            mascara_rechazo = (entrevista[p1_1_col].notna()) & (entrevista[p1_1_col] != "")
+            entrevista.loc[mascara_rechazo, "tipo_registro"] = "Rechazo"
         
+        # 3. Si tiene p1_2 con valor = Reemplazo (pero cuenta como realizada)
         if p1_2_col:
-            # p1_2 tiene valor = reemplazo (pero va en REALIZADAS)
-            tiene_p1_2 = (df[p1_2_col].notna()) & (df[p1_2_col] != "")
+            mascara_reemplazo = (entrevista[p1_2_col].notna()) & (entrevista[p1_2_col] != "")
+            entrevista.loc[mascara_reemplazo, "es_reemplazo"] = True
         
-        # Clasificar
-        # Primero: marcar todo lo que tiene status COMPLETED o IN_PROGRESS (de folio o entrevista)
-        status_a_usar = None
-        if "status_folio" in df.columns:
-            status_a_usar = "status_folio"
-        elif "status" in df.columns:
-            status_a_usar = "status"
-        
-        if status_a_usar:
-            mascara_realizada = df[status_a_usar].isin(["COMPLETED"])
-            df.loc[mascara_realizada, "tipo_registro"] = "Realizada"
-        
-        # Segundo: sobrescribir con Rechazo si tiene p1_1 (se negó)
-        if isinstance(tiene_p1_1, pd.Series):
-            df.loc[tiene_p1_1, "tipo_registro"] = "Rechazo"
-        
-        # Marcar específicamente los reemplazos (para conteo, pero quedan como realizadas)
-        if isinstance(tiene_p1_2, pd.Series):
-            df["es_reemplazo"] = tiene_p1_2
+        # ---------- FOLIO SURVEY (SOLO PARA REGIÓN Y ENCUESTADOR) ----------
+        if "folio_survey" in xls.sheet_names:
+            folio = pd.read_excel(xls, "folio_survey")
+            
+            # Mapeo de columnas
+            columnas_mapeo = {
+                "Region (Agregada)": "region_key",
+                "Region(Agregada)": "region_key",
+                "Region": "region_key",
+                "region": "region_key",
+                "Comuna (Agregada)": "comuna",
+                "Comuna(Agregada)": "comuna",
+                "Comuna": "comuna",
+                "comuna": "comuna",
+                "surveyor_full_name": "encuestador",
+                "Encuestador": "encuestador",
+                "encuestador": "encuestador",
+                "subject_folio": "folio_folio",
+                "Folio": "folio_folio",
+                "folio": "folio_folio",
+            }
+            
+            rename_dict = {}
+            for col_original, col_nueva in columnas_mapeo.items():
+                if col_original in folio.columns:
+                    rename_dict[col_original] = col_nueva
+            
+            folio = folio.rename(columns=rename_dict)
+            
+            # Limpiar folio en folio_survey
+            if 'folio_folio' in folio.columns:
+                folio["folio_folio"] = folio["folio_folio"].astype(str).str.strip()
+            
+            # Asegurar columnas opcionales
+            if "encuestador" not in folio.columns:
+                folio["encuestador"] = "Sin encuestador"
+            if "comuna" not in folio.columns:
+                folio["comuna"] = "Sin comuna"
+            if "region_key" not in folio.columns:
+                st.error("❌ No se encuentra columna de región en folio_survey")
+                st.stop()
+            
+            # Limpiar región
+            folio["region_key"] = (
+                folio["region_key"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .replace({"#N/D": np.nan, "NAN": np.nan})
+            )
+            folio = folio.dropna(subset=["region_key"]).copy()
+            
+            # MERGE: entrevista (principal) + folio (info adicional)
+            # Usar columna folio para el merge
+            df = entrevista.merge(
+                folio[['folio_folio', 'region_key', 'comuna', 'encuestador']], 
+                left_on='folio',
+                right_on='folio_folio',
+                how='left'
+            )
+            
+            # Limpiar valores faltantes
+            df["comuna"] = df["comuna"].fillna("Sin comuna")
+            df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
+            df["region_key"] = df["region_key"].fillna("SIN REGIÓN")
+            
         else:
-            df["es_reemplazo"] = False
+            st.warning("⚠️ No se encuentra folio_survey, se usará solo entrevista_survey")
+            df = entrevista.copy()
+            df["region_key"] = "SIN REGIÓN"
+            df["comuna"] = "Sin comuna"
+            df["encuestador"] = "Sin encuestador"
         
-        # Procesar fechas
-        if "completedAt_cl" in df.columns:
-            df["completedAt_cl"] = pd.to_datetime(df["completedAt_cl"], errors="coerce")
-            df["fecha"] = df["completedAt_cl"].dt.date
-            # Para los que no tienen fecha, usar fecha de hoy
-            df.loc[df["fecha"].isna(), "fecha"] = date.today()
-        else:
-            df["fecha"] = date.today()
-        
-        df["comuna"] = df["comuna"].fillna("Sin comuna")
-        df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
+        # Limpiar región
         df["region_key"] = df["region_key"].astype(str).str.strip().str.upper()
+        
+        # Llenar fechas faltantes con hoy
+        df.loc[df["fecha"].isna(), "fecha"] = date.today()
         
         # ---------- TOTALMUESTRA ----------
         tot = pd.read_excel(path_total)
@@ -296,6 +281,11 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         # Ordenar por número de región
         tot_regiones = tot_regiones.sort_values("region_num").reset_index(drop=True)
+        
+        # DEBUG
+        st.write("DEBUG - Distribución de status:", df['status'].value_counts())
+        st.write("DEBUG - Distribución de tipo_registro:", df['tipo_registro'].value_counts())
+        st.write("DEBUG - Total registros:", len(df))
         
         return df, limpieza_info, tot_regiones
         
@@ -381,7 +371,7 @@ st.sidebar.header("⚙️ Filtros y parámetros")
 
 fecha_corte = st.sidebar.date_input(
     "Fecha de corte",
-    value=fecha_max,  # Usa la fecha máxima de los datos, no hoy
+    value=fecha_max,
     min_value=fecha_min,
     max_value=date.today(),
 )
@@ -437,24 +427,24 @@ if fecha_corte > fecha_max:
 # RESUMEN POR REGIÓN
 # ===============================
 
-# Contar por tipo de registro
+# Contar por tipo de registro (usa folio para contar únicos)
 resumen_tipo = (
-    df_corte.groupby(["region_key", "tipo_registro"])["campaign_assigned_id"]
+    df_corte.groupby(["region_key", "tipo_registro"])["folio"]
     .nunique()
     .reset_index()
-    .pivot(index="region_key", columns="tipo_registro", values="campaign_assigned_id")
+    .pivot(index="region_key", columns="tipo_registro", values="folio")
     .fillna(0)
 )
 
 # Asegurar que existan todas las columnas
-for col in ["Realizada", "Rechazo"]:
+for col in ["Realizada", "Rechazo", "Otro"]:
     if col not in resumen_tipo.columns:
         resumen_tipo[col] = 0
 
-# Contar reemplazos por separado (no van al gráfico pero sí a métricas)
+# Contar reemplazos por separado
 reemplazos_region = (
     df_corte[df_corte["es_reemplazo"] == True]
-    .groupby("region_key")["campaign_assigned_id"]
+    .groupby("region_key")["folio"]
     .nunique()
     .rename("reemplazos")
 )
@@ -581,7 +571,7 @@ fig.update_layout(
     margin=dict(l=0, r=0, t=40, b=40),
 )
 
-st.plotly_chart(fig, width='stretch')
+st.plotly_chart(fig, use_container_width=True)
 
 # ===============================
 # TABLA DETALLE POR REGIÓN
@@ -626,7 +616,7 @@ tabla_region["% Reemplazo"] = tabla_region["% Reemplazo"].apply(lambda x: f"{x:.
 
 st.dataframe(
     tabla_region,
-    width='stretch',
+    use_container_width=True,
     hide_index=True,
 )
 
@@ -636,10 +626,10 @@ st.dataframe(
 
 with st.expander("👥 Ver detalle por encuestador"):
     resumen_encuestador = (
-        df_corte.groupby(["region_key", "encuestador"])["campaign_assigned_id"]
+        df_corte.groupby(["region_key", "encuestador"])["folio"]
         .nunique()
         .reset_index()
-        .rename(columns={"campaign_assigned_id": "realizadas"})
+        .rename(columns={"folio": "realizadas"})
     )
     
     resumen_encuestador["meta"] = meta_diaria * dias_transcurridos
@@ -671,7 +661,7 @@ with st.expander("👥 Ver detalle por encuestador"):
     
     st.dataframe(
         tabla_encuestador,
-        width='stretch',
+        use_container_width=True,
         hide_index=True,
     )
 
