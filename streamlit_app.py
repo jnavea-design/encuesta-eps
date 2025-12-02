@@ -65,8 +65,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         
         entrevista = pd.read_excel(xls, "entrevista_survey")
         
-        #st.write("DEBUG - Columnas en entrevista_survey:", list(entrevista.columns)[:20])
-        
         # Identificar columna de folio
         folio_col = None
         for col in ['folio_encuesta', 'subjectId', 'subject_id', 'folio']:
@@ -209,7 +207,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             folio = folio.dropna(subset=["region_key"]).copy()
             
             # MERGE: entrevista (principal) + folio (info adicional)
-            # Usar columna folio para el merge
             df = entrevista.merge(
                 folio[['folio_folio', 'region_key', 'comuna', 'encuestador']], 
                 left_on='folio',
@@ -282,11 +279,6 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # Ordenar por número de región
         tot_regiones = tot_regiones.sort_values("region_num").reset_index(drop=True)
         
-        # DEBUG
-        #st.write("DEBUG - Distribución de status:", df['status'].value_counts())
-        #st.write("DEBUG - Distribución de tipo_registro:", df['tipo_registro'].value_counts())
-        #st.write("DEBUG - Total registros:", len(df))
-        
         return df, limpieza_info, tot_regiones
         
     except Exception as e:
@@ -331,14 +323,12 @@ if df.empty:
 fecha_min = df["fecha"].min()
 fecha_max = df["fecha"].max()
 
-# Debug: mostrar fechas
 st.sidebar.info(f"Datos disponibles: {fecha_min} a {fecha_max}")
 
 # ===============================
 # CABECERA
 # ===============================
 
-# Logos en la parte superior
 col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 2])
 
 with col2:
@@ -353,7 +343,6 @@ with col4:
     if os.path.exists("logos/logo_indap.png"):
         st.image("logos/logo_indap.png", width=150)
 
-# Título debajo de los logos
 st.title("📊 Dashboard de avance de encuesta por región")
 st.caption(f"Fuente: {os.path.basename(DATA_PATH)} y {os.path.basename(TOTAL_PATH)}")
 
@@ -383,7 +372,6 @@ meta_diaria = st.sidebar.number_input(
     step=1.0,
 )
 
-# Lista de regiones (ordenadas por número)
 regiones_disponibles = (
     tot_regiones[["region_key", "region_label", "region_num"]]
     .drop_duplicates()
@@ -412,14 +400,11 @@ df_corte = df[
 df_filtrado_total = df[df["region_key"].isin(regiones_seleccionadas)].copy()
 
 if df_corte.empty:
-    st.warning(
-        "⚠️ No hay registros hasta la fecha de corte seleccionada."
-    )
+    st.warning("⚠️ No hay registros hasta la fecha de corte seleccionada.")
     st.stop()
 
 dias_transcurridos = (fecha_corte - fecha_min).days + 1
 
-# Ajustar si la fecha de corte es mayor a la fecha máxima real de datos
 if fecha_corte > fecha_max:
     dias_transcurridos = (fecha_max - fecha_min).days + 1
 
@@ -427,7 +412,6 @@ if fecha_corte > fecha_max:
 # RESUMEN POR REGIÓN
 # ===============================
 
-# Contar por tipo de registro (usa folio para contar únicos)
 resumen_tipo = (
     df_corte.groupby(["region_key", "tipo_registro"])["folio"]
     .nunique()
@@ -436,12 +420,10 @@ resumen_tipo = (
     .fillna(0)
 )
 
-# Asegurar que existan todas las columnas
 for col in ["Realizada", "Rechazo", "Otro"]:
     if col not in resumen_tipo.columns:
         resumen_tipo[col] = 0
 
-# Contar reemplazos por separado
 reemplazos_region = (
     df_corte[df_corte["es_reemplazo"] == True]
     .groupby("region_key")["folio"]
@@ -492,11 +474,9 @@ resumen_region["tasa_reemplazo"] = (
     100 * resumen_region["reemplazos"] / resumen_region["contactadas"]
 ).round(1)
 
-# Reemplazar inf y nan
 resumen_region = resumen_region.replace([np.inf, -np.inf], 0)
 resumen_region = resumen_region.fillna(0)
 
-# Ordenar por número de región
 resumen_region = resumen_region.sort_values("region_num").reset_index(drop=True)
 
 # ===============================
@@ -513,7 +493,6 @@ total_rechazos_global = int((df_corte_global["tipo_registro"] == "Rechazo").sum(
 total_reemplazos_global = int(df_corte_global["es_reemplazo"].sum())
 total_contactadas_global = total_realizadas_global + total_rechazos_global
 
-# Avance incluye realizadas + rechazos
 avance_global = (
     100 * total_contactadas_global / total_muestra_global
     if total_muestra_global > 0
@@ -609,7 +588,6 @@ tabla_region = resumen_region[
     }
 )
 
-# Formatear porcentajes
 tabla_region["% Avance"] = tabla_region["% Avance"].apply(lambda x: f"{x:.1f}%")
 tabla_region["% Rechazo"] = tabla_region["% Rechazo"].apply(lambda x: f"{x:.1f}%")
 tabla_region["% Reemplazo"] = tabla_region["% Reemplazo"].apply(lambda x: f"{x:.1f}%")
@@ -637,14 +615,12 @@ with st.expander("👥 Ver detalle por encuestador"):
         100 * resumen_encuestador["realizadas"] / resumen_encuestador["meta"]
     ).round(1)
     
-    # Merge con region_label y region_num
     resumen_encuestador = resumen_encuestador.merge(
         tot_regiones[["region_key", "region_label", "region_num"]], 
         on="region_key", 
         how="left"
     )
     
-    # Ordenar por región (número)
     resumen_encuestador = resumen_encuestador.sort_values(["region_num", "encuestador"])
     
     tabla_encuestador = resumen_encuestador[
@@ -665,27 +641,20 @@ with st.expander("👥 Ver detalle por encuestador"):
         hide_index=True,
     )
 
-
-# ... (todo el código anterior se mantiene igual hasta antes del FOOTER)
-
 # ===============================
 # NUEVA SECCIÓN: ANÁLISIS DE RAZONES DE RECHAZO Y REEMPLAZO
 # ===============================
 
 st.markdown("---")
-st.header("🔍 Análisis Detallado de Razones")
+st.header("🔍 Análisis Detallado Rechazo y reemplazo")
 
-# Preparar datos de P1.1 y P1.2
-# Identificar columnas
+# Identificar columnas P1.1 y P1.2
 p1_1_col = None
-p1_1_otro_col = None
 p1_2_col = None
 
 for col in df.columns:
     col_lower = col.lower()
-    if 'p1_1' in col_lower and 'otro' in col_lower:
-        p1_1_otro_col = col
-    elif 'p1_1' in col_lower and 'otro' not in col_lower:
+    if 'p1_1' in col_lower and 'otro' not in col_lower:
         p1_1_col = col
     elif 'p1_2' in col_lower and 'otro' not in col_lower:
         p1_2_col = col
@@ -706,39 +675,19 @@ etiquetas_p1_2 = {
     3: 'Usuario no se dedica últimos 3 años'
 }
 
-# Crear tabs para organizar
+# Crear tabs
 tab1, tab2 = st.tabs(["❌ Razones de Rechazo (P1.1)", "🔄 Razones de Reemplazo (P1.2)"])
 
 with tab1:
     st.subheader("P1.1: ¿Por qué no quiso participar en la entrevista?")
     
     if p1_1_col and p1_1_col in df_corte.columns:
-        # Preparar datos
         df_p1_1 = df_corte[df_corte[p1_1_col].notna()].copy()
         
         if len(df_p1_1) > 0:
-            # Convertir a entero
             df_p1_1['p1_1_valor'] = pd.to_numeric(df_p1_1[p1_1_col], errors='coerce').astype('Int64')
             df_p1_1['p1_1_etiqueta'] = df_p1_1['p1_1_valor'].map(etiquetas_p1_1)
             
-            # Si existe columna de "Otro", agregarla
-            if p1_1_otro_col and p1_1_otro_col in df_p1_1.columns:
-                df_p1_1['p1_1_otro_texto'] = df_p1_1[p1_1_otro_col]
-                
-                # Crear etiqueta completa
-                def crear_etiqueta_otro(row):
-                    if row['p1_1_valor'] == 6 and pd.notna(row['p1_1_otro_texto']) and str(row['p1_1_otro_texto']).strip() != '':
-                        texto = str(row['p1_1_otro_texto']).strip()
-                        if len(texto) > 50:
-                            texto = texto[:47] + '...'
-                        return f"Otro: {texto}"
-                    return row['p1_1_etiqueta']
-                
-                df_p1_1['p1_1_etiqueta_completa'] = df_p1_1.apply(crear_etiqueta_otro, axis=1)
-            else:
-                df_p1_1['p1_1_etiqueta_completa'] = df_p1_1['p1_1_etiqueta']
-            
-            # Métricas generales
             col1, col2, col3 = st.columns(3)
             
             total_rechazos_p1_1 = len(df_p1_1)
@@ -751,13 +700,11 @@ with tab1:
             
             st.markdown("---")
             
-            # Gráficos
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.markdown("#### Distribución de Razones (Agrupadas)")
+                st.markdown("#### Distribución de Razones")
                 
-                # Gráfico de barras agrupado
                 conteo_agrupado = df_p1_1['p1_1_etiqueta'].value_counts().sort_values(ascending=True)
                 
                 fig_p1_1_agrupado = go.Figure()
@@ -779,13 +726,10 @@ with tab1:
                 )
                 
                 st.plotly_chart(fig_p1_1_agrupado, use_container_width=True)
-                
-                st.caption("💡 Nota: Las respuestas 'Otro' están agrupadas en una sola categoría")
             
             with col2:
                 st.markdown("#### Proporción")
                 
-                # Pie chart
                 fig_pie_p1_1 = go.Figure()
                 
                 fig_pie_p1_1.add_trace(go.Pie(
@@ -803,52 +747,9 @@ with tab1:
                 
                 st.plotly_chart(fig_pie_p1_1, use_container_width=True)
             
-            # Desglose de "Otro"
-            if casos_otro > 0:
-                st.markdown("---")
-                st.markdown("#### 📝 Desglose de Respuestas 'Otro'")
-                
-                df_otros = df_p1_1[df_p1_1['p1_1_valor'] == 6].copy()
-                
-                # Gráfico detallado de "Otro"
-                conteo_otros = df_otros['p1_1_etiqueta_completa'].value_counts().sort_values(ascending=True).head(10)
-                
-                if len(conteo_otros) > 0:
-                    fig_otros = go.Figure()
-                    
-                    fig_otros.add_trace(go.Bar(
-                        y=conteo_otros.index,
-                        x=conteo_otros.values,
-                        orientation='h',
-                        marker_color=COLORS["naranjo"],
-                        text=[f"{v}" for v in conteo_otros.values],
-                        textposition='outside'
-                    ))
-                    
-                    fig_otros.update_layout(
-                        title="Top 10 Razones Específicas (Categoría 'Otro')",
-                        xaxis_title="Número de casos",
-                        yaxis_title="",
-                        height=max(300, len(conteo_otros) * 40),
-                        showlegend=False
-                    )
-                    
-                    st.plotly_chart(fig_otros, use_container_width=True)
-                    
-                    st.caption(f"📊 Mostrando {min(10, len(conteo_otros))} de {casos_otro} respuestas 'Otro'")
-                
-                # Tabla con todas las respuestas "Otro"
-                with st.expander("Ver todas las respuestas 'Otro' (texto completo)"):
-                    df_otros_tabla = df_otros[['folio', 'p1_1_otro_texto']].copy()
-                    df_otros_tabla.columns = ['Folio', 'Razón Especificada']
-                    df_otros_tabla = df_otros_tabla.sort_values('Folio')
-                    st.dataframe(df_otros_tabla, use_container_width=True, hide_index=True)
-            
-            # Análisis por región
             st.markdown("---")
             st.markdown("#### 🗺️ Razones de Rechazo por Región")
             
-            # Merge con región
             df_p1_1_region = df_p1_1.merge(
                 df_corte[['folio', 'region_key']], 
                 on='folio', 
@@ -861,7 +762,6 @@ with tab1:
                 how='left'
             )
             
-            # Crear tabla cruzada
             tabla_cruzada = pd.crosstab(
                 df_p1_1_region['region_label'], 
                 df_p1_1_region['p1_1_etiqueta'],
@@ -879,15 +779,12 @@ with tab2:
     st.subheader("P1.2: ¿Por qué proponen entrevistar a otra persona?")
     
     if p1_2_col and p1_2_col in df_corte.columns:
-        # Preparar datos
         df_p1_2 = df_corte[df_corte[p1_2_col].notna()].copy()
         
         if len(df_p1_2) > 0:
-            # Convertir a entero
             df_p1_2['p1_2_valor'] = pd.to_numeric(df_p1_2[p1_2_col], errors='coerce').astype('Int64')
             df_p1_2['p1_2_etiqueta'] = df_p1_2['p1_2_valor'].map(etiquetas_p1_2)
             
-            # Métricas generales
             col1, col2, col3 = st.columns(3)
             
             total_reemplazos_p1_2 = len(df_p1_2)
@@ -899,13 +796,11 @@ with tab2:
             
             st.markdown("---")
             
-            # Gráficos
             col1, col2 = st.columns([2, 1])
             
             with col1:
                 st.markdown("#### Distribución de Razones de Reemplazo")
                 
-                # Gráfico de barras
                 conteo_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().sort_values(ascending=True)
                 
                 fig_p1_2 = go.Figure()
@@ -931,7 +826,6 @@ with tab2:
             with col2:
                 st.markdown("#### Proporción")
                 
-                # Pie chart
                 fig_pie_p1_2 = go.Figure()
                 
                 fig_pie_p1_2.add_trace(go.Pie(
@@ -949,11 +843,9 @@ with tab2:
                 
                 st.plotly_chart(fig_pie_p1_2, use_container_width=True)
             
-            # Análisis por región
             st.markdown("---")
             st.markdown("#### 🗺️ Razones de Reemplazo por Región")
             
-            # Merge con región
             df_p1_2_region = df_p1_2.merge(
                 df_corte[['folio', 'region_key']], 
                 on='folio', 
@@ -966,7 +858,6 @@ with tab2:
                 how='left'
             )
             
-            # Crear tabla cruzada
             tabla_cruzada_p1_2 = pd.crosstab(
                 df_p1_2_region['region_label'], 
                 df_p1_2_region['p1_2_etiqueta'],
@@ -975,10 +866,8 @@ with tab2:
             
             st.dataframe(tabla_cruzada_p1_2, use_container_width=True)
             
-            # Gráfico apilado por región
             st.markdown("#### Distribución por Región")
             
-            # Preparar datos para gráfico apilado
             region_razon = df_p1_2_region.groupby(['region_label', 'p1_2_etiqueta']).size().reset_index(name='count')
             
             fig_region_stack = go.Figure()
@@ -1013,7 +902,3 @@ with tab2:
 
 st.markdown("---")
 st.caption("Dashboard creado con Streamlit | Datos actualizados al " + fecha_max.strftime('%d/%m/%Y'))
-
-
-
-
