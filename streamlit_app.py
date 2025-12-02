@@ -646,7 +646,7 @@ with st.expander("👥 Ver detalle por encuestador"):
 # ===============================
 
 st.markdown("---")
-st.header("🔍 Análisis Detallado Rechazo y reemplazo")
+st.header("🔍 Análisis Detallado de Razones")
 
 # Identificar columnas P1.1 y P1.2
 p1_1_col = None
@@ -695,8 +695,8 @@ with tab1:
             razon_principal = df_p1_1['p1_1_etiqueta'].value_counts().idxmax() if len(df_p1_1) > 0 else "N/A"
             
             col1.metric("Total Rechazos con Razón", total_rechazos_p1_1)
-            col2.metric("Casos 'Otro' especificados", casos_otro)
-            col3.metric("Razón Principal", razon_principal)
+            col2.metric("Razón Principal", razon_principal)
+            col3.metric("Casos 'Otro'", casos_otro)
             
             st.markdown("---")
             
@@ -746,29 +746,6 @@ with tab1:
                 )
                 
                 st.plotly_chart(fig_pie_p1_1, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("#### 🗺️ Razones de Rechazo por Región")
-            
-            df_p1_1_region = df_p1_1.merge(
-                df_corte[['folio', 'region_key']], 
-                on='folio', 
-                how='left'
-            )
-            
-            df_p1_1_region = df_p1_1_region.merge(
-                tot_regiones[['region_key', 'region_label']], 
-                on='region_key', 
-                how='left'
-            )
-            
-            tabla_cruzada = pd.crosstab(
-                df_p1_1_region['region_label'], 
-                df_p1_1_region['p1_1_etiqueta'],
-                margins=True
-            )
-            
-            st.dataframe(tabla_cruzada, use_container_width=True)
             
         else:
             st.info("ℹ️ No hay registros con razones de rechazo especificadas en P1.1")
@@ -842,54 +819,6 @@ with tab2:
                 )
                 
                 st.plotly_chart(fig_pie_p1_2, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("#### 🗺️ Razones de Reemplazo por Región")
-            
-            df_p1_2_region = df_p1_2.merge(
-                df_corte[['folio', 'region_key']], 
-                on='folio', 
-                how='left'
-            )
-            
-            df_p1_2_region = df_p1_2_region.merge(
-                tot_regiones[['region_key', 'region_label']], 
-                on='region_key', 
-                how='left'
-            )
-            
-            tabla_cruzada_p1_2 = pd.crosstab(
-                df_p1_2_region['region_label'], 
-                df_p1_2_region['p1_2_etiqueta'],
-                margins=True
-            )
-            
-            st.dataframe(tabla_cruzada_p1_2, use_container_width=True)
-            
-            st.markdown("#### Distribución por Región")
-            
-            region_razon = df_p1_2_region.groupby(['region_label', 'p1_2_etiqueta']).size().reset_index(name='count')
-            
-            fig_region_stack = go.Figure()
-            
-            for razon in region_razon['p1_2_etiqueta'].unique():
-                data_razon = region_razon[region_razon['p1_2_etiqueta'] == razon]
-                fig_region_stack.add_trace(go.Bar(
-                    y=data_razon['region_label'],
-                    x=data_razon['count'],
-                    name=razon,
-                    orientation='h'
-                ))
-            
-            fig_region_stack.update_layout(
-                barmode='stack',
-                xaxis_title="Número de casos",
-                yaxis_title="",
-                height=max(400, len(region_razon['region_label'].unique()) * 40),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
-            st.plotly_chart(fig_region_stack, use_container_width=True)
             
         else:
             st.info("ℹ️ No hay registros con razones de reemplazo especificadas en P1.2")
