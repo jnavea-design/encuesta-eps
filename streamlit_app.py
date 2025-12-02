@@ -685,7 +685,27 @@ with tab1:
         df_p1_1 = df_corte[df_corte[p1_1_col].notna()].copy()
         
         if len(df_p1_1) > 0:
-            df_p1_1['p1_1_valor'] = pd.to_numeric(df_p1_1[p1_1_col], errors='coerce').astype('Int64')
+            # NUEVO: Función para extraer el valor numérico o detectar "OTRO"
+            def procesar_p1_1(valor):
+                if pd.isna(valor):
+                    return None
+                valor_str = str(valor).strip()
+                # Si empieza con "OTRO:" o contiene "OTRO", es 6
+                if valor_str.upper().startswith('OTRO') or 'OTRO:' in valor_str.upper():
+                    return 6
+                # Si es un número, convertirlo
+                try:
+                    return int(float(valor_str))
+                except:
+                    # Si contiene un número al inicio, extraerlo
+                    import re
+                    match = re.search(r'^\d+', valor_str)
+                    if match:
+                        return int(match.group())
+                    return None
+            
+            df_p1_1['p1_1_valor'] = df_p1_1[p1_1_col].apply(procesar_p1_1)
+            df_p1_1 = df_p1_1[df_p1_1['p1_1_valor'].notna()].copy()
             df_p1_1['p1_1_etiqueta'] = df_p1_1['p1_1_valor'].map(etiquetas_p1_1)
             
             col1, col2, col3 = st.columns(3)
