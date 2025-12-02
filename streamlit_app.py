@@ -1,669 +1,343 @@
-import os
-from datetime import date
-
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
+# ... (todo el código anterior se mantiene igual hasta antes del FOOTER)
 
 # ===============================
-# CONFIGURACIÓN BÁSICA STREAMLIT
+# NUEVA SECCIÓN: ANÁLISIS DE RAZONES DE RECHAZO Y REEMPLAZO
 # ===============================
 
-st.set_page_config(
-    page_title="Avance encuesta por región",
-    layout="wide",
-)
+st.markdown("---")
+st.header("🔍 Análisis Detallado de Razones")
 
-# ===============================
-# RUTAS DE ARCHIVOS
-# ===============================
+# Preparar datos de P1.1 y P1.2
+# Identificar columnas
+p1_1_col = None
+p1_1_otro_col = None
+p1_2_col = None
 
-DATA_PATH = "data/data_01122025.xlsx"
-TOTAL_PATH = "data/totalmuestra.xlsx"
+for col in df.columns:
+    col_lower = col.lower()
+    if 'p1_1' in col_lower and 'otro' in col_lower:
+        p1_1_otro_col = col
+    elif 'p1_1' in col_lower and 'otro' not in col_lower:
+        p1_1_col = col
+    elif 'p1_2' in col_lower and 'otro' not in col_lower:
+        p1_2_col = col
 
-# Colores Rimisp
-COLORS = {
-    "verde_oscuro": "#578D7B",
-    "verde_medio": "#8AB366",
-    "verde_claro": "#7BB191",
-    "verde_palido": "#C5DFB7",
-    "naranjo": "#E97E3F",
-    "rojo": "#DC3545",
+# Mapeos de etiquetas
+etiquetas_p1_1 = {
+    1: 'Falta de confianza',
+    2: 'Falta de tiempo',
+    3: 'No encuentra beneficio',
+    4: 'Falta de interés',
+    5: 'Respondió encuestas recientemente',
+    6: 'Otro'
 }
 
-# ===============================
-# FUNCIONES DE VALIDACIÓN
-# ===============================
+etiquetas_p1_2 = {
+    1: 'Imposibilidad por enfermedad crónica',
+    2: 'Usuario no habita/abandonó agricultura',
+    3: 'Usuario no se dedica últimos 3 años'
+}
 
-def verificar_archivos():
-    """Verifica que los archivos existan"""
-    errores = []
-    if not os.path.exists(DATA_PATH):
-        errores.append(f"❌ No se encuentra el archivo: {DATA_PATH}")
-    if not os.path.exists(TOTAL_PATH):
-        errores.append(f"❌ No se encuentra el archivo: {TOTAL_PATH}")
-    return errores
+# Crear tabs para organizar
+tab1, tab2 = st.tabs(["❌ Razones de Rechazo (P1.1)", "🔄 Razones de Reemplazo (P1.2)"])
 
-# ===============================
-# CARGA Y PREPARACIÓN DE DATOS
-# ===============================
-
-def cargar_y_preparar_datos(path_data: str, path_total: str):
-    """
-    Carga y prepara los datos de las encuestas
-    AHORA USA ENTREVISTA_SURVEY COMO FUENTE PRINCIPAL
-    """
-    try:
-        # ---------- ENTREVISTA SURVEY (AHORA ES LA PRINCIPAL) ----------
-        xls = pd.ExcelFile(path_data)
+with tab1:
+    st.subheader("P1.1: ¿Por qué no quiso participar en la entrevista?")
+    
+    if p1_1_col and p1_1_col in df_corte.columns:
+        # Preparar datos
+        df_p1_1 = df_corte[df_corte[p1_1_col].notna()].copy()
         
-        if "entrevista_survey" not in xls.sheet_names:
-            st.error(f"❌ La hoja 'entrevista_survey' no existe en {path_data}")
-            st.write(f"Hojas disponibles: {xls.sheet_names}")
-            st.stop()
-        
-        entrevista = pd.read_excel(xls, "entrevista_survey")
-        
-        #st.write("DEBUG - Columnas en entrevista_survey:", list(entrevista.columns)[:20])
-        
-        # Identificar columna de folio
-        folio_col = None
-        for col in ['folio_encuesta', 'subjectId', 'subject_id', 'folio']:
-            if col in entrevista.columns:
-                folio_col = col
-                break
-        
-        if not folio_col:
-            st.error("❌ No se encuentra columna de folio en entrevista_survey")
-            st.write("Columnas disponibles:", list(entrevista.columns))
-            st.stop()
-        
-        # Renombrar a 'folio'
-        entrevista = entrevista.rename(columns={folio_col: 'folio'})
-        
-        # Limpiar folio
-        entrevista["folio"] = entrevista["folio"].astype(str).str.strip()
-        patron_folio_valido = r"^\d{5}-[0-9Kk]$"
-        
-        total_registros = len(entrevista)
-        entrevista = entrevista[entrevista["folio"].str.match(patron_folio_valido, na=False)].copy()
-        registros_validos = len(entrevista)
-        registros_filtrados = total_registros - registros_validos
-        
-        limpieza_info = {
-            "total_folios": total_registros,
-            "folios_validos": registros_validos,
-            "folios_filtrados": registros_filtrados,
-        }
-        
-        # Identificar columna de status
-        status_col = None
-        for col in ['status', 'Status', 'campaign_status']:
-            if col in entrevista.columns:
-                status_col = col
-                break
-        
-        if not status_col:
-            st.error("❌ No se encuentra columna de status en entrevista_survey")
-            st.stop()
-        
-        entrevista = entrevista.rename(columns={status_col: 'status'})
-        
-        # Identificar columna de fecha completado
-        fecha_col = None
-        for col in ['completedAt_cl', 'completed_at', 'completedAt', 'fecha_completado']:
-            if col in entrevista.columns:
-                fecha_col = col
-                break
-        
-        if fecha_col:
-            entrevista = entrevista.rename(columns={fecha_col: 'completedAt_cl'})
-            entrevista["completedAt_cl"] = pd.to_datetime(entrevista["completedAt_cl"], errors="coerce")
-            entrevista["fecha"] = entrevista["completedAt_cl"].dt.date
-        else:
-            entrevista["fecha"] = date.today()
-        
-        # Buscar columnas p1_0, p1_1, p1_2
-        p1_0_col = None
-        p1_1_col = None
-        p1_2_col = None
-        
-        for col in entrevista.columns:
-            col_lower = col.lower()
-            if 'p1_0' in col_lower and not p1_0_col:
-                p1_0_col = col
-            elif 'p1_1' in col_lower and not p1_1_col:
-                p1_1_col = col
-            elif 'p1_2' in col_lower and not p1_2_col:
-                p1_2_col = col
-        
-        # CLASIFICAR REGISTROS
-        entrevista["tipo_registro"] = "Otro"
-        entrevista["es_reemplazo"] = False
-        
-        # 1. COMPLETED = Realizada
-        mascara_completed = entrevista['status'] == 'COMPLETED'
-        entrevista.loc[mascara_completed, "tipo_registro"] = "Realizada"
-        
-        # 2. Si tiene p1_1 con valor = Rechazo (se negó a responder)
-        if p1_1_col:
-            mascara_rechazo = (entrevista[p1_1_col].notna()) & (entrevista[p1_1_col] != "")
-            entrevista.loc[mascara_rechazo, "tipo_registro"] = "Rechazo"
-        
-        # 3. Si tiene p1_2 con valor = Reemplazo (pero cuenta como realizada)
-        if p1_2_col:
-            mascara_reemplazo = (entrevista[p1_2_col].notna()) & (entrevista[p1_2_col] != "")
-            entrevista.loc[mascara_reemplazo, "es_reemplazo"] = True
-        
-        # ---------- FOLIO SURVEY (SOLO PARA REGIÓN Y ENCUESTADOR) ----------
-        if "folio_survey" in xls.sheet_names:
-            folio = pd.read_excel(xls, "folio_survey")
+        if len(df_p1_1) > 0:
+            # Convertir a entero
+            df_p1_1['p1_1_valor'] = pd.to_numeric(df_p1_1[p1_1_col], errors='coerce').astype('Int64')
+            df_p1_1['p1_1_etiqueta'] = df_p1_1['p1_1_valor'].map(etiquetas_p1_1)
             
-            # Mapeo de columnas
-            columnas_mapeo = {
-                "Region (Agregada)": "region_key",
-                "Region(Agregada)": "region_key",
-                "Region": "region_key",
-                "region": "region_key",
-                "Comuna (Agregada)": "comuna",
-                "Comuna(Agregada)": "comuna",
-                "Comuna": "comuna",
-                "comuna": "comuna",
-                "surveyor_full_name": "encuestador",
-                "Encuestador": "encuestador",
-                "encuestador": "encuestador",
-                "subject_folio": "folio_folio",
-                "Folio": "folio_folio",
-                "folio": "folio_folio",
-            }
+            # Si existe columna de "Otro", agregarla
+            if p1_1_otro_col and p1_1_otro_col in df_p1_1.columns:
+                df_p1_1['p1_1_otro_texto'] = df_p1_1[p1_1_otro_col]
+                
+                # Crear etiqueta completa
+                def crear_etiqueta_otro(row):
+                    if row['p1_1_valor'] == 6 and pd.notna(row['p1_1_otro_texto']) and str(row['p1_1_otro_texto']).strip() != '':
+                        texto = str(row['p1_1_otro_texto']).strip()
+                        if len(texto) > 50:
+                            texto = texto[:47] + '...'
+                        return f"Otro: {texto}"
+                    return row['p1_1_etiqueta']
+                
+                df_p1_1['p1_1_etiqueta_completa'] = df_p1_1.apply(crear_etiqueta_otro, axis=1)
+            else:
+                df_p1_1['p1_1_etiqueta_completa'] = df_p1_1['p1_1_etiqueta']
             
-            rename_dict = {}
-            for col_original, col_nueva in columnas_mapeo.items():
-                if col_original in folio.columns:
-                    rename_dict[col_original] = col_nueva
+            # Métricas generales
+            col1, col2, col3 = st.columns(3)
             
-            folio = folio.rename(columns=rename_dict)
+            total_rechazos_p1_1 = len(df_p1_1)
+            casos_otro = (df_p1_1['p1_1_valor'] == 6).sum()
+            razon_principal = df_p1_1['p1_1_etiqueta'].value_counts().idxmax() if len(df_p1_1) > 0 else "N/A"
             
-            # Limpiar folio en folio_survey
-            if 'folio_folio' in folio.columns:
-                folio["folio_folio"] = folio["folio_folio"].astype(str).str.strip()
+            col1.metric("Total Rechazos con Razón", total_rechazos_p1_1)
+            col2.metric("Casos 'Otro' especificados", casos_otro)
+            col3.metric("Razón Principal", razon_principal)
             
-            # Asegurar columnas opcionales
-            if "encuestador" not in folio.columns:
-                folio["encuestador"] = "Sin encuestador"
-            if "comuna" not in folio.columns:
-                folio["comuna"] = "Sin comuna"
-            if "region_key" not in folio.columns:
-                st.error("❌ No se encuentra columna de región en folio_survey")
-                st.stop()
+            st.markdown("---")
             
-            # Limpiar región
-            folio["region_key"] = (
-                folio["region_key"]
-                .astype(str)
-                .str.strip()
-                .str.upper()
-                .replace({"#N/D": np.nan, "NAN": np.nan})
-            )
-            folio = folio.dropna(subset=["region_key"]).copy()
+            # Gráficos
+            col1, col2 = st.columns([2, 1])
             
-            # MERGE: entrevista (principal) + folio (info adicional)
-            # Usar columna folio para el merge
-            df = entrevista.merge(
-                folio[['folio_folio', 'region_key', 'comuna', 'encuestador']], 
-                left_on='folio',
-                right_on='folio_folio',
+            with col1:
+                st.markdown("#### Distribución de Razones (Agrupadas)")
+                
+                # Gráfico de barras agrupado
+                conteo_agrupado = df_p1_1['p1_1_etiqueta'].value_counts().sort_values(ascending=True)
+                
+                fig_p1_1_agrupado = go.Figure()
+                
+                fig_p1_1_agrupado.add_trace(go.Bar(
+                    y=conteo_agrupado.index,
+                    x=conteo_agrupado.values,
+                    orientation='h',
+                    marker_color=COLORS["rojo"],
+                    text=[f"{v} ({v/total_rechazos_p1_1*100:.1f}%)" for v in conteo_agrupado.values],
+                    textposition='outside'
+                ))
+                
+                fig_p1_1_agrupado.update_layout(
+                    xaxis_title="Número de casos",
+                    yaxis_title="",
+                    height=max(300, len(conteo_agrupado) * 50),
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig_p1_1_agrupado, use_container_width=True)
+                
+                st.caption("💡 Nota: Las respuestas 'Otro' están agrupadas en una sola categoría")
+            
+            with col2:
+                st.markdown("#### Proporción")
+                
+                # Pie chart
+                fig_pie_p1_1 = go.Figure()
+                
+                fig_pie_p1_1.add_trace(go.Pie(
+                    labels=conteo_agrupado.index,
+                    values=conteo_agrupado.values,
+                    hole=0.4,
+                    marker=dict(colors=['#e74c3c', '#c0392b', '#e67e22', '#d35400', '#95a5a6', '#7f8c8d'])
+                ))
+                
+                fig_pie_p1_1.update_layout(
+                    height=400,
+                    showlegend=True,
+                    legend=dict(orientation="v", yanchor="middle", y=0.5)
+                )
+                
+                st.plotly_chart(fig_pie_p1_1, use_container_width=True)
+            
+            # Desglose de "Otro"
+            if casos_otro > 0:
+                st.markdown("---")
+                st.markdown("#### 📝 Desglose de Respuestas 'Otro'")
+                
+                df_otros = df_p1_1[df_p1_1['p1_1_valor'] == 6].copy()
+                
+                # Gráfico detallado de "Otro"
+                conteo_otros = df_otros['p1_1_etiqueta_completa'].value_counts().sort_values(ascending=True).head(10)
+                
+                if len(conteo_otros) > 0:
+                    fig_otros = go.Figure()
+                    
+                    fig_otros.add_trace(go.Bar(
+                        y=conteo_otros.index,
+                        x=conteo_otros.values,
+                        orientation='h',
+                        marker_color=COLORS["naranjo"],
+                        text=[f"{v}" for v in conteo_otros.values],
+                        textposition='outside'
+                    ))
+                    
+                    fig_otros.update_layout(
+                        title="Top 10 Razones Específicas (Categoría 'Otro')",
+                        xaxis_title="Número de casos",
+                        yaxis_title="",
+                        height=max(300, len(conteo_otros) * 40),
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_otros, use_container_width=True)
+                    
+                    st.caption(f"📊 Mostrando {min(10, len(conteo_otros))} de {casos_otro} respuestas 'Otro'")
+                
+                # Tabla con todas las respuestas "Otro"
+                with st.expander("Ver todas las respuestas 'Otro' (texto completo)"):
+                    df_otros_tabla = df_otros[['folio', 'p1_1_otro_texto']].copy()
+                    df_otros_tabla.columns = ['Folio', 'Razón Especificada']
+                    df_otros_tabla = df_otros_tabla.sort_values('Folio')
+                    st.dataframe(df_otros_tabla, use_container_width=True, hide_index=True)
+            
+            # Análisis por región
+            st.markdown("---")
+            st.markdown("#### 🗺️ Razones de Rechazo por Región")
+            
+            # Merge con región
+            df_p1_1_region = df_p1_1.merge(
+                df_corte[['folio', 'region_key']], 
+                on='folio', 
                 how='left'
             )
             
-            # Limpiar valores faltantes
-            df["comuna"] = df["comuna"].fillna("Sin comuna")
-            df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
-            df["region_key"] = df["region_key"].fillna("SIN REGIÓN")
+            df_p1_1_region = df_p1_1_region.merge(
+                tot_regiones[['region_key', 'region_label']], 
+                on='region_key', 
+                how='left'
+            )
+            
+            # Crear tabla cruzada
+            tabla_cruzada = pd.crosstab(
+                df_p1_1_region['region_label'], 
+                df_p1_1_region['p1_1_etiqueta'],
+                margins=True
+            )
+            
+            st.dataframe(tabla_cruzada, use_container_width=True)
             
         else:
-            st.warning("⚠️ No se encuentra folio_survey, se usará solo entrevista_survey")
-            df = entrevista.copy()
-            df["region_key"] = "SIN REGIÓN"
-            df["comuna"] = "Sin comuna"
-            df["encuestador"] = "Sin encuestador"
-        
-        # Limpiar región
-        df["region_key"] = df["region_key"].astype(str).str.strip().str.upper()
-        
-        # Llenar fechas faltantes con hoy
-        df.loc[df["fecha"].isna(), "fecha"] = date.today()
-        
-        # ---------- TOTALMUESTRA ----------
-        tot = pd.read_excel(path_total)
-        
-        mapeo_total = {
-            "Región": "region_key",
-            "Region": "region_key",
-            "región": "region_key",
-            "region": "region_key",
-            "N° de usuarios(as)": "total_muestra",
-            "Total muestra": "total_muestra",
-            "total_muestra": "total_muestra",
-            "Muestra": "total_muestra",
-        }
-        
-        rename_total = {}
-        for col_orig, col_nueva in mapeo_total.items():
-            if col_orig in tot.columns:
-                rename_total[col_orig] = col_nueva
-        
-        tot_regiones = tot.rename(columns=rename_total)
-        
-        tot_regiones["region_key"] = (
-            tot_regiones["region_key"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-        
-        tot_regiones = tot_regiones.replace({"region_key": {"NAN": np.nan}})
-        tot_regiones = tot_regiones.dropna(subset=["region_key"]).copy()
-        
-        # Extraer número de región para ordenamiento
-        tot_regiones["region_num"] = (
-            tot_regiones["region_key"]
-            .str.extract(r'^(\d+)', expand=False)
-            .astype(float)
-        )
-        
-        # Crear etiqueta CON número
-        tot_regiones["region_label"] = (
-            tot_regiones["region_key"]
-            .str.replace("-", " - ")
-        )
-        
-        # Ordenar por número de región
-        tot_regiones = tot_regiones.sort_values("region_num").reset_index(drop=True)
-        
-        # DEBUG
-        #st.write("DEBUG - Distribución de status:", df['status'].value_counts())
-        #st.write("DEBUG - Distribución de tipo_registro:", df['tipo_registro'].value_counts())
-        #st.write("DEBUG - Total registros:", len(df))
-        
-        return df, limpieza_info, tot_regiones
-        
-    except Exception as e:
-        st.error(f"❌ Error al cargar datos: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        st.stop()
-
-@st.cache_data
-def load_data(path_data: str, path_total: str):
-    return cargar_y_preparar_datos(path_data, path_total)
-
-# ===============================
-# VERIFICAR ARCHIVOS
-# ===============================
-
-errores = verificar_archivos()
-if errores:
-    st.error("### Errores encontrados:")
-    for error in errores:
-        st.write(error)
-    st.info("""
-    **Instrucciones:**
-    1. Crea una carpeta llamada `data` en el mismo directorio que este script
-    2. Coloca tus archivos Excel en esa carpeta:
-       - `data_01122025.xlsx`
-       - `totalmuestra.xlsx`
-    """)
-    st.stop()
-
-# ===============================
-# CARGAR DATOS
-# ===============================
-
-with st.spinner("Cargando datos..."):
-    df, limpieza_info, tot_regiones = load_data(DATA_PATH, TOTAL_PATH)
-
-if df.empty:
-    st.error("No se encontraron registros.")
-    st.stop()
-
-fecha_min = df["fecha"].min()
-fecha_max = df["fecha"].max()
-
-# Debug: mostrar fechas
-st.sidebar.info(f"Datos disponibles: {fecha_min} a {fecha_max}")
-
-# ===============================
-# CABECERA
-# ===============================
-
-# Logos en la parte superior
-col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 2])
-
-with col2:
-    if os.path.exists("logos/logo_rimisp.png"):
-        st.image("logos/logo_rimisp.png", width=150)
-
-with col3:
-    if os.path.exists("logos/logo_bid.png"):
-        st.image("logos/logo_bid.png", width=150)
-
-with col4:
-    if os.path.exists("logos/logo_indap.png"):
-        st.image("logos/logo_indap.png", width=150)
-
-# Título debajo de los logos
-st.title("📊 Dashboard de avance de encuesta por región")
-st.caption(f"Fuente: {os.path.basename(DATA_PATH)} y {os.path.basename(TOTAL_PATH)}")
-
-with st.expander("ℹ️ Detalle de limpieza de folios"):
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Folios totales", limpieza_info['total_folios'])
-    col2.metric("Folios válidos", limpieza_info['folios_validos'])
-    col3.metric("Folios filtrados", limpieza_info['folios_filtrados'])
-
-# ===============================
-# SIDEBAR
-# ===============================
-
-st.sidebar.header("⚙️ Filtros y parámetros")
-
-fecha_corte = st.sidebar.date_input(
-    "Fecha de corte",
-    value=fecha_max,
-    min_value=fecha_min,
-    max_value=date.today(),
-)
-
-meta_diaria = st.sidebar.number_input(
-    "Meta diaria por encuestador",
-    min_value=1.0,
-    value=3.0,
-    step=1.0,
-)
-
-# Lista de regiones (ordenadas por número)
-regiones_disponibles = (
-    tot_regiones[["region_key", "region_label", "region_num"]]
-    .drop_duplicates()
-    .sort_values("region_num")
-)
-
-regiones_seleccionadas = st.sidebar.multiselect(
-    "Regiones a mostrar",
-    options=list(regiones_disponibles["region_key"]),
-    default=list(regiones_disponibles["region_key"]),
-    format_func=lambda k: regiones_disponibles[regiones_disponibles["region_key"] == k]["region_label"].iloc[0],
-)
-
-if not regiones_seleccionadas:
-    st.warning("⚠️ Selecciona al menos una región para mostrar resultados.")
-    st.stop()
-
-# ===============================
-# FILTRADO PRINCIPAL
-# ===============================
-
-df_corte = df[
-    (df["fecha"] <= fecha_corte) & (df["region_key"].isin(regiones_seleccionadas))
-].copy()
-
-df_filtrado_total = df[df["region_key"].isin(regiones_seleccionadas)].copy()
-
-if df_corte.empty:
-    st.warning(
-        "⚠️ No hay registros hasta la fecha de corte seleccionada."
-    )
-    st.stop()
-
-dias_transcurridos = (fecha_corte - fecha_min).days + 1
-
-# Ajustar si la fecha de corte es mayor a la fecha máxima real de datos
-if fecha_corte > fecha_max:
-    dias_transcurridos = (fecha_max - fecha_min).days + 1
-
-# ===============================
-# RESUMEN POR REGIÓN
-# ===============================
-
-# Contar por tipo de registro (usa folio para contar únicos)
-resumen_tipo = (
-    df_corte.groupby(["region_key", "tipo_registro"])["folio"]
-    .nunique()
-    .reset_index()
-    .pivot(index="region_key", columns="tipo_registro", values="folio")
-    .fillna(0)
-)
-
-# Asegurar que existan todas las columnas
-for col in ["Realizada", "Rechazo", "Otro"]:
-    if col not in resumen_tipo.columns:
-        resumen_tipo[col] = 0
-
-# Contar reemplazos por separado
-reemplazos_region = (
-    df_corte[df_corte["es_reemplazo"] == True]
-    .groupby("region_key")["folio"]
-    .nunique()
-    .rename("reemplazos")
-)
-
-realizadas_region = resumen_tipo["Realizada"].rename("realizadas")
-rechazos_region = resumen_tipo["Rechazo"].rename("rechazos")
-
-encuestadores_region = (
-    df_filtrado_total.groupby("region_key")["encuestador"]
-    .nunique()
-    .rename("n_encuestadores")
-)
-
-resumen_region = tot_regiones[
-    tot_regiones["region_key"].isin(regiones_seleccionadas)
-].copy()
-
-resumen_region = resumen_region.merge(realizadas_region, on="region_key", how="left")
-resumen_region = resumen_region.merge(rechazos_region, on="region_key", how="left")
-resumen_region = resumen_region.merge(reemplazos_region, on="region_key", how="left")
-resumen_region = resumen_region.merge(encuestadores_region, on="region_key", how="left")
-
-resumen_region[["realizadas", "rechazos", "reemplazos", "n_encuestadores"]] = resumen_region[
-    ["realizadas", "rechazos", "reemplazos", "n_encuestadores"]
-].fillna(0)
-
-resumen_region["contactadas"] = (
-    resumen_region["realizadas"] + 
-    resumen_region["rechazos"]
-)
-
-resumen_region["pendientes"] = (
-    resumen_region["total_muestra"] - resumen_region["contactadas"]
-).clip(lower=0)
-
-resumen_region["avance_pct"] = (
-    100 * resumen_region["contactadas"] / resumen_region["total_muestra"]
-).round(1)
-
-resumen_region["tasa_rechazo"] = (
-    100 * resumen_region["rechazos"] / resumen_region["contactadas"]
-).round(1)
-
-resumen_region["tasa_reemplazo"] = (
-    100 * resumen_region["reemplazos"] / resumen_region["contactadas"]
-).round(1)
-
-# Reemplazar inf y nan
-resumen_region = resumen_region.replace([np.inf, -np.inf], 0)
-resumen_region = resumen_region.fillna(0)
-
-# Ordenar por número de región
-resumen_region = resumen_region.sort_values("region_num").reset_index(drop=True)
-
-# ===============================
-# MÉTRICAS GLOBALES
-# ===============================
-
-st.subheader("📈 Métricas Globales")
-
-total_muestra_global = float(tot_regiones["total_muestra"].sum())
-df_corte_global = df[df["fecha"] <= fecha_corte].copy()
-
-total_realizadas_global = int((df_corte_global["tipo_registro"] == "Realizada").sum())
-total_rechazos_global = int((df_corte_global["tipo_registro"] == "Rechazo").sum())
-total_reemplazos_global = int(df_corte_global["es_reemplazo"].sum())
-total_contactadas_global = total_realizadas_global + total_rechazos_global
-
-# Avance incluye realizadas + rechazos
-avance_global = (
-    100 * total_contactadas_global / total_muestra_global
-    if total_muestra_global > 0
-    else 0
-)
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("✅ Realizadas", f"{total_realizadas_global:,}")
-col2.metric("🎯 Meta Total", f"{int(total_muestra_global):,}")
-col3.metric("📊 Avance", f"{avance_global:.1f}%")
-col4.metric("📅 Días", dias_transcurridos)
-col5.metric("❌ Rechazos", f"{total_rechazos_global:,}")
-col6.metric("🔄 Reemplazos", f"{total_reemplazos_global:,}")
-
-st.markdown(f"**Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')}")
-
-# ===============================
-# GRÁFICO: AVANCE POR REGIÓN
-# ===============================
-
-st.subheader("📊 Avance por región")
-
-fig = go.Figure()
-
-fig.add_bar(
-    y=resumen_region["region_label"],
-    x=resumen_region["realizadas"],
-    name="Realizadas (incluye reemplazos)",
-    marker_color=COLORS["verde_oscuro"],
-    orientation='h',
-)
-
-fig.add_bar(
-    y=resumen_region["region_label"],
-    x=resumen_region["rechazos"],
-    name="Rechazos",
-    marker_color=COLORS["rojo"],
-    orientation='h',
-)
-
-fig.add_bar(
-    y=resumen_region["region_label"],
-    x=resumen_region["pendientes"],
-    name="Pendientes",
-    marker_color=COLORS["verde_palido"],
-    orientation='h',
-)
-
-fig.update_layout(
-    barmode="stack",
-    xaxis_title="Número de encuestas",
-    yaxis_title="",
-    legend_title="Estado",
-    height=max(400, len(resumen_region) * 40),
-    margin=dict(l=0, r=0, t=40, b=40),
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ===============================
-# TABLA DETALLE POR REGIÓN
-# ===============================
-
-st.subheader("📋 Detalle por región")
-
-tabla_region = resumen_region[
-    [
-        "region_label",
-        "realizadas",
-        "rechazos",
-        "reemplazos",
-        "contactadas",
-        "pendientes",
-        "total_muestra",
-        "avance_pct",
-        "tasa_rechazo",
-        "tasa_reemplazo",
-        "n_encuestadores",
-    ]
-].rename(
-    columns={
-        "region_label": "Región",
-        "realizadas": "Realizadas",
-        "rechazos": "Rechazos",
-        "reemplazos": "Reemplazos",
-        "contactadas": "Contactadas",
-        "pendientes": "Pendientes",
-        "total_muestra": "Meta",
-        "avance_pct": "% Avance",
-        "tasa_rechazo": "% Rechazo",
-        "tasa_reemplazo": "% Reemplazo",
-        "n_encuestadores": "Encuestadores",
-    }
-)
-
-# Formatear porcentajes
-tabla_region["% Avance"] = tabla_region["% Avance"].apply(lambda x: f"{x:.1f}%")
-tabla_region["% Rechazo"] = tabla_region["% Rechazo"].apply(lambda x: f"{x:.1f}%")
-tabla_region["% Reemplazo"] = tabla_region["% Reemplazo"].apply(lambda x: f"{x:.1f}%")
-
-st.dataframe(
-    tabla_region,
-    use_container_width=True,
-    hide_index=True,
-)
-
-# ===============================
-# DETALLE POR ENCUESTADOR
-# ===============================
-
-with st.expander("👥 Ver detalle por encuestador"):
-    resumen_encuestador = (
-        df_corte.groupby(["region_key", "encuestador"])["folio"]
-        .nunique()
-        .reset_index()
-        .rename(columns={"folio": "realizadas"})
-    )
+            st.info("ℹ️ No hay registros con razones de rechazo especificadas en P1.1")
+    else:
+        st.warning("⚠️ No se encontró la columna P1.1 en los datos")
+
+with tab2:
+    st.subheader("P1.2: ¿Por qué proponen entrevistar a otra persona?")
     
-    resumen_encuestador["meta"] = meta_diaria * dias_transcurridos
-    resumen_encuestador["avance_pct"] = (
-        100 * resumen_encuestador["realizadas"] / resumen_encuestador["meta"]
-    ).round(1)
-    
-    # Merge con region_label y region_num
-    resumen_encuestador = resumen_encuestador.merge(
-        tot_regiones[["region_key", "region_label", "region_num"]], 
-        on="region_key", 
-        how="left"
-    )
-    
-    # Ordenar por región (número)
-    resumen_encuestador = resumen_encuestador.sort_values(["region_num", "encuestador"])
-    
-    tabla_encuestador = resumen_encuestador[
-        ["region_label", "encuestador", "realizadas", "meta", "avance_pct"]
-    ].rename(columns={
-        "region_label": "Región",
-        "encuestador": "Encuestador",
-        "realizadas": "Realizadas",
-        "meta": "Meta",
-        "avance_pct": "% Avance"
-    })
-    
-    tabla_encuestador["% Avance"] = tabla_encuestador["% Avance"].apply(lambda x: f"{x:.1f}%")
-    
-    st.dataframe(
-        tabla_encuestador,
-        use_container_width=True,
-        hide_index=True,
-    )
+    if p1_2_col and p1_2_col in df_corte.columns:
+        # Preparar datos
+        df_p1_2 = df_corte[df_corte[p1_2_col].notna()].copy()
+        
+        if len(df_p1_2) > 0:
+            # Convertir a entero
+            df_p1_2['p1_2_valor'] = pd.to_numeric(df_p1_2[p1_2_col], errors='coerce').astype('Int64')
+            df_p1_2['p1_2_etiqueta'] = df_p1_2['p1_2_valor'].map(etiquetas_p1_2)
+            
+            # Métricas generales
+            col1, col2, col3 = st.columns(3)
+            
+            total_reemplazos_p1_2 = len(df_p1_2)
+            razon_principal_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().idxmax() if len(df_p1_2) > 0 else "N/A"
+            
+            col1.metric("Total Reemplazos con Razón", total_reemplazos_p1_2)
+            col2.metric("Razón Principal", razon_principal_p1_2)
+            col3.metric("% del Total Realizadas", f"{(total_reemplazos_p1_2/total_realizadas_global*100):.1f}%")
+            
+            st.markdown("---")
+            
+            # Gráficos
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.markdown("#### Distribución de Razones de Reemplazo")
+                
+                # Gráfico de barras
+                conteo_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().sort_values(ascending=True)
+                
+                fig_p1_2 = go.Figure()
+                
+                fig_p1_2.add_trace(go.Bar(
+                    y=conteo_p1_2.index,
+                    x=conteo_p1_2.values,
+                    orientation='h',
+                    marker_color=COLORS["naranjo"],
+                    text=[f"{v} ({v/total_reemplazos_p1_2*100:.1f}%)" for v in conteo_p1_2.values],
+                    textposition='outside'
+                ))
+                
+                fig_p1_2.update_layout(
+                    xaxis_title="Número de casos",
+                    yaxis_title="",
+                    height=max(300, len(conteo_p1_2) * 60),
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig_p1_2, use_container_width=True)
+            
+            with col2:
+                st.markdown("#### Proporción")
+                
+                # Pie chart
+                fig_pie_p1_2 = go.Figure()
+                
+                fig_pie_p1_2.add_trace(go.Pie(
+                    labels=conteo_p1_2.index,
+                    values=conteo_p1_2.values,
+                    hole=0.4,
+                    marker=dict(colors=[COLORS["naranjo"], COLORS["verde_claro"], COLORS["verde_medio"]])
+                ))
+                
+                fig_pie_p1_2.update_layout(
+                    height=400,
+                    showlegend=True,
+                    legend=dict(orientation="v", yanchor="middle", y=0.5)
+                )
+                
+                st.plotly_chart(fig_pie_p1_2, use_container_width=True)
+            
+            # Análisis por región
+            st.markdown("---")
+            st.markdown("#### 🗺️ Razones de Reemplazo por Región")
+            
+            # Merge con región
+            df_p1_2_region = df_p1_2.merge(
+                df_corte[['folio', 'region_key']], 
+                on='folio', 
+                how='left'
+            )
+            
+            df_p1_2_region = df_p1_2_region.merge(
+                tot_regiones[['region_key', 'region_label']], 
+                on='region_key', 
+                how='left'
+            )
+            
+            # Crear tabla cruzada
+            tabla_cruzada_p1_2 = pd.crosstab(
+                df_p1_2_region['region_label'], 
+                df_p1_2_region['p1_2_etiqueta'],
+                margins=True
+            )
+            
+            st.dataframe(tabla_cruzada_p1_2, use_container_width=True)
+            
+            # Gráfico apilado por región
+            st.markdown("#### Distribución por Región")
+            
+            # Preparar datos para gráfico apilado
+            region_razon = df_p1_2_region.groupby(['region_label', 'p1_2_etiqueta']).size().reset_index(name='count')
+            
+            fig_region_stack = go.Figure()
+            
+            for razon in region_razon['p1_2_etiqueta'].unique():
+                data_razon = region_razon[region_razon['p1_2_etiqueta'] == razon]
+                fig_region_stack.add_trace(go.Bar(
+                    y=data_razon['region_label'],
+                    x=data_razon['count'],
+                    name=razon,
+                    orientation='h'
+                ))
+            
+            fig_region_stack.update_layout(
+                barmode='stack',
+                xaxis_title="Número de casos",
+                yaxis_title="",
+                height=max(400, len(region_razon['region_label'].unique()) * 40),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            st.plotly_chart(fig_region_stack, use_container_width=True)
+            
+        else:
+            st.info("ℹ️ No hay registros con razones de reemplazo especificadas en P1.2")
+    else:
+        st.warning("⚠️ No se encontró la columna P1.2 en los datos")
 
 # ===============================
 # FOOTER
