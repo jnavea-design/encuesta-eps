@@ -19,7 +19,7 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/data_02122025.xlsx"
+DATA_PATH = "data/data_03122025.xlsx"
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
 # Colores Rimisp
@@ -304,7 +304,7 @@ if errores:
     **Instrucciones:**
     1. Crea una carpeta llamada `data` en el mismo directorio que este script
     2. Coloca tus archivos Excel en esa carpeta:
-       - `data_02122025.xlsx`
+       - `data_03122025.xlsx`
        - `totalmuestra.xlsx`
     """)
     st.stop()
