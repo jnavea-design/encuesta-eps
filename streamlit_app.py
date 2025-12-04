@@ -53,6 +53,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
     Carga y prepara los datos de las encuestas
     AHORA USA ENTREVISTA_SURVEY COMO FUENTE PRINCIPAL
+    SIN FILTRO DE FOLIOS - CONSIDERA TODOS LOS REGISTROS
     """
     try:
         # ---------- ENTREVISTA SURVEY (AHORA ES LA PRINCIPAL) ----------
@@ -80,28 +81,16 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # Renombrar a 'folio'
         entrevista = entrevista.rename(columns={folio_col: 'folio'})
         
-        # Limpiar folio - PATRÓN AJUSTADO (MÁS PERMISIVO)
+        # Limpiar folio (solo limpieza básica, SIN filtrar)
         entrevista["folio"] = entrevista["folio"].astype(str).str.strip()
         
-        # PATRÓN MÁS PERMISIVO: acepta 4 o 5 dígitos, guión, y uno o más dígitos o K/k
-        patron_folio_valido = r"^\d{4,5}-[0-9Kk]+$"
-        
-        # Mostrar folios que aún así no cumplen el patrón
-        folios_invalidos = entrevista[~entrevista["folio"].str.match(patron_folio_valido, na=False)]["folio"].unique()
-        if len(folios_invalidos) > 0:
-            st.sidebar.warning(f"⚠️ Se encontraron {len(folios_invalidos)} folios con formato inválido")
-            with st.sidebar.expander("Ver folios inválidos"):
-                st.write(folios_invalidos)
-        
+        # Info de registros totales
         total_registros = len(entrevista)
-        entrevista = entrevista[entrevista["folio"].str.match(patron_folio_valido, na=False)].copy()
-        registros_validos = len(entrevista)
-        registros_filtrados = total_registros - registros_validos
         
         limpieza_info = {
             "total_folios": total_registros,
-            "folios_validos": registros_validos,
-            "folios_filtrados": registros_filtrados,
+            "folios_validos": total_registros,
+            "folios_filtrados": 0,
         }
         
         # Identificar columna de status
@@ -355,11 +344,11 @@ with col4:
 st.title("📊 Dashboard de avance de encuesta por región")
 st.caption(f"Fuente: {os.path.basename(DATA_PATH)} y {os.path.basename(TOTAL_PATH)}")
 
-with st.expander("ℹ️ Detalle de limpieza de folios"):
+with st.expander("ℹ️ Información de registros"):
     col1, col2, col3 = st.columns(3)
-    col1.metric("Folios totales", limpieza_info['total_folios'])
-    col2.metric("Folios válidos", limpieza_info['folios_validos'])
-    col3.metric("Folios filtrados", limpieza_info['folios_filtrados'])
+    col1.metric("Total de registros", limpieza_info['total_folios'])
+    col2.metric("Registros procesados", limpieza_info['folios_validos'])
+    col3.metric("Registros excluidos", limpieza_info['folios_filtrados'])
 
 # ===============================
 # SIDEBAR
