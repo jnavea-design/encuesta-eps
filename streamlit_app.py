@@ -80,9 +80,18 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # Renombrar a 'folio'
         entrevista = entrevista.rename(columns={folio_col: 'folio'})
         
-        # Limpiar folio
+        # Limpiar folio - PATRÓN AJUSTADO (MÁS PERMISIVO)
         entrevista["folio"] = entrevista["folio"].astype(str).str.strip()
-        patron_folio_valido = r"^\d{5}-[0-9Kk]$"
+        
+        # PATRÓN MÁS PERMISIVO: acepta 4 o 5 dígitos, guión, y uno o más dígitos o K/k
+        patron_folio_valido = r"^\d{4,5}-[0-9Kk]+$"
+        
+        # Mostrar folios que aún así no cumplen el patrón
+        folios_invalidos = entrevista[~entrevista["folio"].str.match(patron_folio_valido, na=False)]["folio"].unique()
+        if len(folios_invalidos) > 0:
+            st.sidebar.warning(f"⚠️ Se encontraron {len(folios_invalidos)} folios con formato inválido")
+            with st.sidebar.expander("Ver folios inválidos"):
+                st.write(folios_invalidos)
         
         total_registros = len(entrevista)
         entrevista = entrevista[entrevista["folio"].str.match(patron_folio_valido, na=False)].copy()
@@ -685,7 +694,7 @@ with tab1:
         df_p1_1 = df_corte[df_corte[p1_1_col].notna()].copy()
         
         if len(df_p1_1) > 0:
-            # NUEVO: Función para extraer el valor numérico o detectar "OTRO"
+            # Función para extraer el valor numérico o detectar "OTRO"
             def procesar_p1_1(valor):
                 if pd.isna(valor):
                     return None
