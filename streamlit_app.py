@@ -53,7 +53,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
     Carga y prepara los datos de las encuestas
     AHORA USA ENTREVISTA_SURVEY COMO FUENTE PRINCIPAL
-    SIN FILTRO DE FOLIOS - CONSIDERA TODOS LOS REGISTROS
+    FILTRA folio_survey para incluir SOLO folios con encuesta en entrevista_survey
     """
     try:
         # ---------- ENTREVISTA SURVEY (AHORA ES LA PRINCIPAL) ----------
@@ -81,7 +81,7 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         # Renombrar a 'folio'
         entrevista = entrevista.rename(columns={folio_col: 'folio'})
         
-        # Limpiar folio (solo limpieza básica, SIN filtrar)
+        # Limpiar folio
         entrevista["folio"] = entrevista["folio"].astype(str).str.strip()
         
         # Info de registros totales
@@ -203,6 +203,17 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
                 .replace({"#N/D": np.nan, "NAN": np.nan})
             )
             folio = folio.dropna(subset=["region_key"]).copy()
+            
+            # CRÍTICO: FILTRAR folio_survey para incluir SOLO los folios que están en entrevista_survey
+            # Esto elimina los ~20 folios que están en folio_survey pero no tienen encuesta
+            folios_con_encuesta = entrevista['folio'].unique()
+            folio_antes = len(folio)
+            folio = folio[folio['folio_folio'].isin(folios_con_encuesta)].copy()
+            folio_despues = len(folio)
+            
+            folios_excluidos = folio_antes - folio_despues
+            if folios_excluidos > 0:
+                st.sidebar.success(f"✅ Se excluyeron {folios_excluidos} folios de folio_survey que no tienen encuesta en entrevista_survey")
             
             # MERGE: entrevista (principal) + folio (info adicional)
             df = entrevista.merge(
