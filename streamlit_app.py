@@ -19,7 +19,7 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/data_11122025.csv"
+DATA_PATH = "data/data_04122025.csv"
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
 # Colores Rimisp
@@ -194,7 +194,7 @@ if errores:
     **Instrucciones:**
     1. Crea una carpeta llamada `data` en el mismo directorio que este script
     2. Coloca tus archivos en esa carpeta:
-       - `data_11122025.csv`
+       - `data_04122025.csv`
        - `totalmuestra.xlsx`
     """)
     st.stop()
