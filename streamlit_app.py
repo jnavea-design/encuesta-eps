@@ -79,8 +79,8 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
             rename_dict['Comuna'] = 'comuna'
         if 'Encuestador' in df.columns:
             rename_dict['Encuestador'] = 'encuestador'
-        if 'folio_enc' in df.columns:
-            rename_dict['folio_enc'] = 'folio'
+        if 'folio_encuesta' in df.columns:
+            rename_dict['folio_encuesta'] = 'folio'
         if 'status' in df.columns:
             rename_dict['status'] = 'status'
         if 'completedAt' in df.columns:
