@@ -19,7 +19,7 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/data_04122025.csv"
+DATA_PATH = "data/EPS_14122025.xlsx"
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
 # Colores Rimisp
@@ -51,34 +51,66 @@ def verificar_archivos():
 
 def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
-    Carga y prepara los datos desde CSV
-    Lee directamente el CSV que ya tiene toda la información
+    Carga y prepara los datos desde Excel (nueva estructura EPS_14122025)
+    Hoja "Entrevista" contiene los datos principales
     """
     try:
-        # ---------- LEER CSV PRINCIPAL ----------
-        df = pd.read_csv(path_data, encoding='ISO-8859-1', sep=';', low_memory=False)
+        # ---------- LEER EXCEL PRINCIPAL (HOJA "Entrevista") ----------
+        xls = pd.ExcelFile(path_data)
         
-        print(f"✅ CSV cargado: {len(df)} registros")
+        # Verificar que existe la hoja "Entrevista"
+        if 'Entrevista' not in xls.sheet_names:
+            st.error(f"❌ No se encontró la hoja 'Entrevista' en {path_data}")
+            st.info(f"Hojas disponibles: {xls.sheet_names}")
+            st.stop()
+        
+        df = pd.read_excel(xls, 'Entrevista')
+        
+        print(f"✅ Excel cargado (Hoja 'Entrevista'): {len(df)} registros")
+        print(f"Columnas: {list(df.columns[:15])}")
         
         # Renombrar columnas para consistencia
-        df = df.rename(columns={
-            'Region (Agregada)': 'region_key',
-            'Comuna (Agregada)': 'comuna',
-            'Encuestador': 'encuestador',
-            'folio_encuesta': 'folio'
-        })
+        rename_dict = {}
+        
+        # Mapeo de columnas
+        if 'Region' in df.columns:
+            rename_dict['Region'] = 'region_key'
+        if 'Comuna' in df.columns:
+            rename_dict['Comuna'] = 'comuna'
+        if 'Encuestador' in df.columns:
+            rename_dict['Encuestador'] = 'encuestador'
+        if 'folio_enc' in df.columns:
+            rename_dict['folio_enc'] = 'folio'
+        if 'status' in df.columns:
+            rename_dict['status'] = 'status'
+        if 'completedAt' in df.columns:
+            rename_dict['completedAt'] = 'completedAt_cl'
+        
+        df = df.rename(columns=rename_dict)
         
         # Limpiar folio
-        df["folio"] = df["folio"].astype(str).str.strip()
+        if 'folio' in df.columns:
+            df["folio"] = df["folio"].astype(str).str.strip()
+        else:
+            st.error("❌ No se encontró columna de folio")
+            st.stop()
         
         # Convertir fecha
-        df["completedAt_cl"] = pd.to_datetime(df["completedAt_cl"], errors="coerce")
-        df["fecha"] = df["completedAt_cl"].dt.date
+        if 'completedAt_cl' in df.columns:
+            df["completedAt_cl"] = pd.to_datetime(df["completedAt_cl"], errors="coerce")
+            df["fecha"] = df["completedAt_cl"].dt.date
+        elif 'createdAt' in df.columns:
+            df["createdAt"] = pd.to_datetime(df["createdAt"], errors="coerce")
+            df["fecha"] = df["createdAt"].dt.date
+        else:
+            df["fecha"] = date.today()
+        
         df.loc[df["fecha"].isna(), "fecha"] = date.today()
         
         # ELIMINAR DUPLICADOS - MANTENER SOLO EL ÚLTIMO REGISTRO POR FOLIO
         df_antes = len(df)
-        df = df.sort_values('completedAt_cl', ascending=False)
+        if 'completedAt_cl' in df.columns:
+            df = df.sort_values('completedAt_cl', ascending=False)
         df = df.drop_duplicates(subset=['folio'], keep='first')
         df_despues = len(df)
         duplicados_eliminados = df_antes - df_despues
@@ -97,26 +129,33 @@ def cargar_y_preparar_datos(path_data: str, path_total: str):
         df["es_reemplazo"] = False
         
         # 1. COMPLETED = Realizada
-        mascara_completed = df['status'] == 'COMPLETED'
-        df.loc[mascara_completed, "tipo_registro"] = "Realizada"
+        if 'status' in df.columns:
+            mascara_completed = df['status'] == 'COMPLETED'
+            df.loc[mascara_completed, "tipo_registro"] = "Realizada"
         
-        # 2. Si tiene p1_1 con valor = Rechazo
-        mascara_rechazo = (df['p1_1'].notna()) & (df['p1_1'] != "")
-        df.loc[mascara_rechazo, "tipo_registro"] = "Rechazo"
+        # 2. Si tiene P1.1 con valor = Rechazo
+        if 'P1.1' in df.columns:
+            mascara_rechazo = (df['P1.1'].notna()) & (df['P1.1'] != "")
+            df.loc[mascara_rechazo, "tipo_registro"] = "Rechazo"
         
-        # 3. Si tiene p1_2 con valor = Reemplazo
-        mascara_reemplazo = (df['p1_2'].notna()) & (df['p1_2'] != "")
-        df.loc[mascara_reemplazo, "es_reemplazo"] = True
+        # 3. Si tiene P1.2 con valor = Reemplazo
+        if 'P1.2' in df.columns:
+            mascara_reemplazo = (df['P1.2'].notna()) & (df['P1.2'] != "")
+            df.loc[mascara_reemplazo, "es_reemplazo"] = True
         
         # Limpiar región
-        df["region_key"] = (
-            df["region_key"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            .replace({"#N/D": np.nan, "NAN": np.nan})
-        )
-        df = df.dropna(subset=["region_key"]).copy()
+        if 'region_key' in df.columns:
+            df["region_key"] = (
+                df["region_key"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .replace({"#N/D": np.nan, "NAN": np.nan})
+            )
+            df = df.dropna(subset=["region_key"]).copy()
+        else:
+            st.error("❌ No se encontró columna de región")
+            st.stop()
         
         # Limpiar encuestador y comuna
         df["encuestador"] = df["encuestador"].fillna("Sin encuestador")
@@ -194,7 +233,7 @@ if errores:
     **Instrucciones:**
     1. Crea una carpeta llamada `data` en el mismo directorio que este script
     2. Coloca tus archivos en esa carpeta:
-       - `data_04122025.csv`
+       - `EPS_14122025.xlsx` (con hoja "Entrevista")
        - `totalmuestra.xlsx`
     """)
     st.stop()
@@ -234,7 +273,7 @@ with col4:
         st.image("logos/logo_indap.png", width=150)
 
 st.title("📊 Dashboard de avance de encuesta por región")
-st.caption(f"Fuente: {os.path.basename(DATA_PATH)} y {os.path.basename(TOTAL_PATH)}")
+st.caption(f"Fuente: {os.path.basename(DATA_PATH)} (Hoja: Entrevista) y {os.path.basename(TOTAL_PATH)}")
 
 with st.expander("ℹ️ Información de registros"):
     col1, col2, col3 = st.columns(3)
@@ -243,7 +282,7 @@ with st.expander("ℹ️ Información de registros"):
     col3.metric("Duplicados eliminados", limpieza_info['folios_filtrados'])
     
     if limpieza_info['folios_filtrados'] > 0:
-        st.info(f"ℹ️ Se eliminaron {limpieza_info['folios_filtrados']} registros duplicados (mismo folio con múltiples COMPLETED)")
+        st.info(f"ℹ️ Se eliminaron {limpieza_info['folios_filtrados']} registros duplicados (mismo folio)")
 
 # ===============================
 # SIDEBAR
@@ -275,7 +314,7 @@ regiones_seleccionadas = st.sidebar.multiselect(
     "Regiones a mostrar",
     options=list(regiones_disponibles["region_key"]),
     default=list(regiones_disponibles["region_key"]),
-    format_func=lambda k: regiones_disponibles[regiones_disponibles["region_key"] == k]["region_label"].iloc[0],
+    format_func=lambda k: regiones_disponibles[regiones_disponibles["region_key"] == k]["region_label"].iloc[0] if len(regiones_disponibles[regiones_disponibles["region_key"] == k]) > 0 else k,
 )
 
 if not regiones_seleccionadas:
@@ -563,160 +602,166 @@ tab1, tab2 = st.tabs(["❌ Razones de Rechazo (P1.1)", "🔄 Razones de Reemplaz
 with tab1:
     st.subheader("P1.1: ¿Por qué no quiso participar en la entrevista?")
     
-    df_p1_1 = df_corte[df_corte['p1_1'].notna()].copy()
-    
-    if len(df_p1_1) > 0:
-        # Función para extraer el valor numérico o detectar "OTRO"
-        def procesar_p1_1(valor):
-            if pd.isna(valor):
-                return None
-            valor_str = str(valor).strip()
-            if valor_str.upper().startswith('OTRO') or 'OTRO:' in valor_str.upper():
-                return 6
-            try:
-                return int(float(valor_str))
-            except:
-                import re
-                match = re.search(r'^\d+', valor_str)
-                if match:
-                    return int(match.group())
-                return None
+    if 'P1.1' in df_corte.columns:
+        df_p1_1 = df_corte[df_corte['P1.1'].notna()].copy()
         
-        df_p1_1['p1_1_valor'] = df_p1_1['p1_1'].apply(procesar_p1_1)
-        df_p1_1 = df_p1_1[df_p1_1['p1_1_valor'].notna()].copy()
-        df_p1_1['p1_1_etiqueta'] = df_p1_1['p1_1_valor'].map(etiquetas_p1_1)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        total_rechazos_p1_1 = len(df_p1_1)
-        casos_otro = (df_p1_1['p1_1_valor'] == 6).sum()
-        razon_principal = df_p1_1['p1_1_etiqueta'].value_counts().idxmax() if len(df_p1_1) > 0 else "N/A"
-        
-        col1.metric("Total Rechazos con Razón", total_rechazos_p1_1)
-        col2.metric("Razón Principal", razon_principal)
-        col3.metric("Casos 'Otro'", casos_otro)
-        
-        st.markdown("---")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.markdown("#### Distribución de Razones")
+        if len(df_p1_1) > 0:
+            # Función para extraer el valor numérico o detectar "OTRO"
+            def procesar_p1_1(valor):
+                if pd.isna(valor):
+                    return None
+                valor_str = str(valor).strip()
+                if valor_str.upper().startswith('OTRO') or 'OTRO:' in valor_str.upper():
+                    return 6
+                try:
+                    return int(float(valor_str))
+                except:
+                    import re
+                    match = re.search(r'^\d+', valor_str)
+                    if match:
+                        return int(match.group())
+                    return None
             
-            conteo_agrupado = df_p1_1['p1_1_etiqueta'].value_counts().sort_values(ascending=True)
+            df_p1_1['p1_1_valor'] = df_p1_1['P1.1'].apply(procesar_p1_1)
+            df_p1_1 = df_p1_1[df_p1_1['p1_1_valor'].notna()].copy()
+            df_p1_1['p1_1_etiqueta'] = df_p1_1['p1_1_valor'].map(etiquetas_p1_1)
             
-            fig_p1_1_agrupado = go.Figure()
+            col1, col2, col3 = st.columns(3)
             
-            fig_p1_1_agrupado.add_trace(go.Bar(
-                y=conteo_agrupado.index,
-                x=conteo_agrupado.values,
-                orientation='h',
-                marker_color=COLORS["rojo"],
-                text=[f"{v} ({v/total_rechazos_p1_1*100:.1f}%)" for v in conteo_agrupado.values],
-                textposition='outside'
-            ))
+            total_rechazos_p1_1 = len(df_p1_1)
+            casos_otro = (df_p1_1['p1_1_valor'] == 6).sum()
+            razon_principal = df_p1_1['p1_1_etiqueta'].value_counts().idxmax() if len(df_p1_1) > 0 else "N/A"
             
-            fig_p1_1_agrupado.update_layout(
-                xaxis_title="Número de casos",
-                yaxis_title="",
-                height=max(300, len(conteo_agrupado) * 50),
-                showlegend=False
-            )
+            col1.metric("Total Rechazos con Razón", total_rechazos_p1_1)
+            col2.metric("Razón Principal", razon_principal)
+            col3.metric("Casos 'Otro'", casos_otro)
             
-            st.plotly_chart(fig_p1_1_agrupado, use_container_width=True)
-        
-        with col2:
-            st.markdown("#### Proporción")
+            st.markdown("---")
             
-            fig_pie_p1_1 = go.Figure()
+            col1, col2 = st.columns([2, 1])
             
-            fig_pie_p1_1.add_trace(go.Pie(
-                labels=conteo_agrupado.index,
-                values=conteo_agrupado.values,
-                hole=0.4,
-                marker=dict(colors=['#e74c3c', '#c0392b', '#e67e22', '#d35400', '#95a5a6', '#7f8c8d'])
-            ))
+            with col1:
+                st.markdown("#### Distribución de Razones")
+                
+                conteo_agrupado = df_p1_1['p1_1_etiqueta'].value_counts().sort_values(ascending=True)
+                
+                fig_p1_1_agrupado = go.Figure()
+                
+                fig_p1_1_agrupado.add_trace(go.Bar(
+                    y=conteo_agrupado.index,
+                    x=conteo_agrupado.values,
+                    orientation='h',
+                    marker_color=COLORS["rojo"],
+                    text=[f"{v} ({v/total_rechazos_p1_1*100:.1f}%)" for v in conteo_agrupado.values],
+                    textposition='outside'
+                ))
+                
+                fig_p1_1_agrupado.update_layout(
+                    xaxis_title="Número de casos",
+                    yaxis_title="",
+                    height=max(300, len(conteo_agrupado) * 50),
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig_p1_1_agrupado, use_container_width=True)
             
-            fig_pie_p1_1.update_layout(
-                height=400,
-                showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5)
-            )
+            with col2:
+                st.markdown("#### Proporción")
+                
+                fig_pie_p1_1 = go.Figure()
+                
+                fig_pie_p1_1.add_trace(go.Pie(
+                    labels=conteo_agrupado.index,
+                    values=conteo_agrupado.values,
+                    hole=0.4,
+                    marker=dict(colors=['#e74c3c', '#c0392b', '#e67e22', '#d35400', '#95a5a6', '#7f8c8d'])
+                ))
+                
+                fig_pie_p1_1.update_layout(
+                    height=400,
+                    showlegend=True,
+                    legend=dict(orientation="v", yanchor="middle", y=0.5)
+                )
+                
+                st.plotly_chart(fig_pie_p1_1, use_container_width=True)
             
-            st.plotly_chart(fig_pie_p1_1, use_container_width=True)
-        
+        else:
+            st.info("ℹ️ No hay registros con razones de rechazo especificadas en P1.1")
     else:
-        st.info("ℹ️ No hay registros con razones de rechazo especificadas en P1.1")
+        st.warning("⚠️ No se encontró la columna P1.1 en los datos")
 
 with tab2:
     st.subheader("P1.2: ¿Por qué proponen entrevistar a otra persona?")
     
-    df_p1_2 = df_corte[df_corte['p1_2'].notna()].copy()
-    
-    if len(df_p1_2) > 0:
-        df_p1_2['p1_2_valor'] = pd.to_numeric(df_p1_2['p1_2'], errors='coerce').astype('Int64')
-        df_p1_2['p1_2_etiqueta'] = df_p1_2['p1_2_valor'].map(etiquetas_p1_2)
+    if 'P1.2' in df_corte.columns:
+        df_p1_2 = df_corte[df_corte['P1.2'].notna()].copy()
         
-        col1, col2, col3 = st.columns(3)
-        
-        total_reemplazos_p1_2 = len(df_p1_2)
-        razon_principal_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().idxmax() if len(df_p1_2) > 0 else "N/A"
-        
-        col1.metric("Total Reemplazos con Razón", total_reemplazos_p1_2)
-        col2.metric("Razón Principal", razon_principal_p1_2)
-        col3.metric("% del Total Realizadas", f"{(total_reemplazos_p1_2/total_realizadas_global*100):.1f}%")
-        
-        st.markdown("---")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.markdown("#### Distribución de Razones de Reemplazo")
+        if len(df_p1_2) > 0:
+            df_p1_2['p1_2_valor'] = pd.to_numeric(df_p1_2['P1.2'], errors='coerce').astype('Int64')
+            df_p1_2['p1_2_etiqueta'] = df_p1_2['p1_2_valor'].map(etiquetas_p1_2)
             
-            conteo_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().sort_values(ascending=True)
+            col1, col2, col3 = st.columns(3)
             
-            fig_p1_2 = go.Figure()
+            total_reemplazos_p1_2 = len(df_p1_2)
+            razon_principal_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().idxmax() if len(df_p1_2) > 0 else "N/A"
             
-            fig_p1_2.add_trace(go.Bar(
-                y=conteo_p1_2.index,
-                x=conteo_p1_2.values,
-                orientation='h',
-                marker_color=COLORS["naranjo"],
-                text=[f"{v} ({v/total_reemplazos_p1_2*100:.1f}%)" for v in conteo_p1_2.values],
-                textposition='outside'
-            ))
+            col1.metric("Total Reemplazos con Razón", total_reemplazos_p1_2)
+            col2.metric("Razón Principal", razon_principal_p1_2)
+            col3.metric("% del Total Realizadas", f"{(total_reemplazos_p1_2/total_realizadas_global*100):.1f}%")
             
-            fig_p1_2.update_layout(
-                xaxis_title="Número de casos",
-                yaxis_title="",
-                height=max(300, len(conteo_p1_2) * 60),
-                showlegend=False
-            )
+            st.markdown("---")
             
-            st.plotly_chart(fig_p1_2, use_container_width=True)
-        
-        with col2:
-            st.markdown("#### Proporción")
+            col1, col2 = st.columns([2, 1])
             
-            fig_pie_p1_2 = go.Figure()
+            with col1:
+                st.markdown("#### Distribución de Razones de Reemplazo")
+                
+                conteo_p1_2 = df_p1_2['p1_2_etiqueta'].value_counts().sort_values(ascending=True)
+                
+                fig_p1_2 = go.Figure()
+                
+                fig_p1_2.add_trace(go.Bar(
+                    y=conteo_p1_2.index,
+                    x=conteo_p1_2.values,
+                    orientation='h',
+                    marker_color=COLORS["naranjo"],
+                    text=[f"{v} ({v/total_reemplazos_p1_2*100:.1f}%)" for v in conteo_p1_2.values],
+                    textposition='outside'
+                ))
+                
+                fig_p1_2.update_layout(
+                    xaxis_title="Número de casos",
+                    yaxis_title="",
+                    height=max(300, len(conteo_p1_2) * 60),
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig_p1_2, use_container_width=True)
             
-            fig_pie_p1_2.add_trace(go.Pie(
-                labels=conteo_p1_2.index,
-                values=conteo_p1_2.values,
-                hole=0.4,
-                marker=dict(colors=[COLORS["naranjo"], COLORS["verde_claro"], COLORS["verde_medio"]])
-            ))
+            with col2:
+                st.markdown("#### Proporción")
+                
+                fig_pie_p1_2 = go.Figure()
+                
+                fig_pie_p1_2.add_trace(go.Pie(
+                    labels=conteo_p1_2.index,
+                    values=conteo_p1_2.values,
+                    hole=0.4,
+                    marker=dict(colors=[COLORS["naranjo"], COLORS["verde_claro"], COLORS["verde_medio"]])
+                ))
+                
+                fig_pie_p1_2.update_layout(
+                    height=400,
+                    showlegend=True,
+                    legend=dict(orientation="v", yanchor="middle", y=0.5)
+                )
+                
+                st.plotly_chart(fig_pie_p1_2, use_container_width=True)
             
-            fig_pie_p1_2.update_layout(
-                height=400,
-                showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5)
-            )
-            
-            st.plotly_chart(fig_pie_p1_2, use_container_width=True)
-        
+        else:
+            st.info("ℹ️ No hay registros con razones de reemplazo especificadas en P1.2")
     else:
-        st.info("ℹ️ No hay registros con razones de reemplazo especificadas en P1.2")
+        st.warning("⚠️ No se encontró la columna P1.2 en los datos")
 
 # ===============================
 # FOOTER
