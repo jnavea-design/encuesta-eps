@@ -412,7 +412,7 @@ resumen_region = resumen_region.fillna(0)
 resumen_region = resumen_region.sort_values("region_num").reset_index(drop=True)
 
 # ===============================
-# MÉTRICAS GLOBALES
+# MÉTRICAS GLOBALES - MODIFICADO
 # ===============================
 
 st.subheader("📈 Métricas Globales")
@@ -420,10 +420,14 @@ st.subheader("📈 Métricas Globales")
 total_muestra_global = float(tot_regiones["total_muestra"].sum())
 df_corte_global = df[df["fecha"] <= fecha_corte].copy()
 
-total_realizadas_global = int((df_corte_global["tipo_registro"] == "Realizada").sum())
+# Separar realizadas solo y rechazos
+total_realizadas_solo = int((df_corte_global["tipo_registro"] == "Realizada").sum())
 total_rechazos_global = int((df_corte_global["tipo_registro"] == "Rechazo").sum())
 total_reemplazos_global = int(df_corte_global["es_reemplazo"].sum())
-total_contactadas_global = total_realizadas_global + total_rechazos_global
+
+# CAMBIO: Realizadas ahora incluye rechazos
+total_realizadas_global = total_realizadas_solo + total_rechazos_global
+total_contactadas_global = total_realizadas_global
 
 avance_global = (
     100 * total_contactadas_global / total_muestra_global
@@ -432,7 +436,7 @@ avance_global = (
 )
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("✅ Realizadas", f"{total_realizadas_global:,}")
+col1.metric("✅ Realizadas (incluye rechazos)", f"{total_realizadas_global:,}")
 col2.metric("🎯 Meta Total", f"{int(total_muestra_global):,}")
 col3.metric("📊 Avance", f"{avance_global:.1f}%")
 col4.metric("📅 Días", dias_transcurridos)
