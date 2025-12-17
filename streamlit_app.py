@@ -19,7 +19,7 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/EPS_15122025.xlsx"
+DATA_PATH = "data/EPS_16122025.xlsx"
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
 # Colores Rimisp
