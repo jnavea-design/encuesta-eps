@@ -51,7 +51,7 @@ def verificar_archivos():
 
 def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
-    Carga y prepara los datos desde Excel (nueva estructura EPS_15122025)
+    Carga y prepara los datos desde Excel (nueva estructura EPS_16122025)
     Hoja "Entrevista" contiene los datos principales
     """
     try:
@@ -233,7 +233,7 @@ if errores:
     **Instrucciones:**
     1. Crea una carpeta llamada `data` en el mismo directorio que este script
     2. Coloca tus archivos en esa carpeta:
-       - `EPS_15122025.xlsx` (con hoja "Entrevista")
+       - `EPS_16122025.xlsx` (con hoja "Entrevista")
        - `totalmuestra.xlsx`
     """)
     st.stop()
