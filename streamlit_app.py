@@ -19,7 +19,7 @@ st.set_page_config(
 # RUTAS DE ARCHIVOS
 # ===============================
 
-DATA_PATH = "data/EPS_16122025.xlsx"
+DATA_PATH = "data/EPS_17122025.xlsx"
 TOTAL_PATH = "data/totalmuestra.xlsx"
 
 # Colores Rimisp
@@ -51,7 +51,7 @@ def verificar_archivos():
 
 def cargar_y_preparar_datos(path_data: str, path_total: str):
     """
-    Carga y prepara los datos desde Excel (nueva estructura EPS_16122025)
+    Carga y prepara los datos desde Excel (nueva estructura EPS_17122025)
     Hoja "Entrevista" contiene los datos principales
     """
     try:
@@ -233,7 +233,7 @@ if errores:
     **Instrucciones:**
     1. Crea una carpeta llamada `data` en el mismo directorio que este script
     2. Coloca tus archivos en esa carpeta:
-       - `EPS_16122025.xlsx` (con hoja "Entrevista")
+       - `EPS_17122025.xlsx` (con hoja "Entrevista")
        - `totalmuestra.xlsx`
     """)
     st.stop()
